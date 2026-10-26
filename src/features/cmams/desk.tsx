@@ -343,7 +343,7 @@ export function DeskPage() {
               <code className='break-all'>{person.id}</code>
             </p>
           )}
-          {card && <CardDownloads key={card.credential} card={card} />}
+          {card && <CardDownloads key={card.shortCode} card={card} />}
         </div>
       </div>
       {message && (

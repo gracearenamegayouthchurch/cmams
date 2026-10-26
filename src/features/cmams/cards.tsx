@@ -178,7 +178,7 @@ export function CardsPage() {
             </p>
           </CardContent>
         </Card>
-        {issued && <CardDownloads key={issued.credential} card={issued} />}
+        {issued && <CardDownloads key={issued.shortCode} card={issued} />}
         <div className='space-y-2'>
           <Label htmlFor='card-search'>Find active cards</Label>
           <Input
