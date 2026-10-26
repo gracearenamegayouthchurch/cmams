@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/stores/auth-store'
+import { ApiError } from '@/lib/cmams-api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -22,11 +22,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: (failureCount, error) => {
-        // eslint-disable-next-line no-console
-        if (import.meta.env.DEV) console.log({ failureCount, error })
-
         if (failureCount >= 0 && import.meta.env.DEV) return false
         if (failureCount > 3 && import.meta.env.PROD) return false
+        if (error instanceof ApiError && [401, 403].includes(error.status)) {
+          return false
+        }
 
         return !(
           error instanceof AxiosError &&
@@ -50,22 +50,18 @@ const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error) => {
-      if (error instanceof AxiosError) {
-        if (error.response?.status === 401) {
-          toast.error('Session expired!')
-          useAuthStore.getState().auth.reset()
-          const redirect = `${router.history.location.href}`
-          router.navigate({ to: '/sign-in', search: { redirect } })
-        }
-        if (error.response?.status === 500) {
-          toast.error('Internal Server Error!')
-          // Only navigate to error page in production to avoid disrupting HMR in development
-          if (import.meta.env.PROD) {
-            router.navigate({ to: '/500' })
-          }
-        }
-        if (error.response?.status === 403) {
-          // router.navigate("/forbidden", { replace: true });
+      if (
+        (error instanceof ApiError && error.status === 401) ||
+        (error instanceof AxiosError && error.response?.status === 401)
+      ) {
+        toast.error('Session expired!')
+        void router.navigate({ to: '/login' })
+        return
+      }
+      if (error instanceof AxiosError && error.response?.status === 500) {
+        toast.error('Internal Server Error!')
+        if (import.meta.env.PROD) {
+          void router.navigate({ to: '/500' })
         }
       }
     },

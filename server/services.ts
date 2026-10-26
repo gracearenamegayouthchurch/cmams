@@ -1,0 +1,37 @@
+import { z } from 'zod'
+import type pg from 'pg'
+
+const fields = z.object({
+  name: z.string().trim().min(3).max(150),
+  category: z.enum(['SUNDAY_SERVICE', 'MIDWEEK_SERVICE', 'DEPARTMENT_MEETING', 'SPECIAL_EVENT', 'LEADERSHIP_MEETING']),
+  scheduledStartAt: z.iso.datetime({ offset: true }),
+  opensAt: z.iso.datetime({ offset: true }), closesAt: z.iso.datetime({ offset: true }),
+}).refine((value) => Date.parse(value.closesAt) > Date.parse(value.opensAt), { message: 'Check-in must close after it opens' })
+
+export function validateService(input: unknown) { return fields.parse(input) }
+
+export async function createService(db: Pick<pg.Pool, 'query'>, input: unknown, staffId: string) {
+  const service = validateService(input)
+  const result = await db.query(`INSERT INTO services(name,category,scheduled_start_at,checkin_opens_at,checkin_closes_at,created_by_staff_id)
+    VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,category,status,scheduled_start_at,checkin_opens_at,checkin_closes_at`,
+  [service.name, service.category, service.scheduledStartAt, service.opensAt, service.closesAt, staffId])
+  return result.rows[0]
+}
+
+export async function listServices(db: Pick<pg.Pool, 'query'>) {
+  const result = await db.query(`SELECT id,name,category,status,scheduled_start_at,checkin_opens_at,checkin_closes_at,locked_eligible_member_count
+    FROM services WHERE status <> 'CANCELLED' ORDER BY scheduled_start_at DESC LIMIT 50`)
+  return result.rows
+}
+
+export async function changeServiceStatus(db: Pick<pg.Pool, 'query'>, serviceId: string, action: 'open' | 'close') {
+  const result = action === 'open'
+    ? await db.query(`UPDATE services SET status='CHECKIN_OPEN' WHERE id=$1 AND status='SCHEDULED'
+        AND now() BETWEEN checkin_opens_at AND checkin_closes_at RETURNING id,status`, [serviceId])
+    : await db.query(`UPDATE services s SET status='CHECKIN_CLOSED', locked_eligible_member_count=(
+        SELECT count(*) FROM people p WHERE p.lifecycle_stage='MEMBER' AND p.deleted_at IS NULL
+          AND p.registered_at <= s.checkin_opens_at)
+        WHERE s.id=$1 AND s.status='CHECKIN_OPEN' RETURNING id,status,locked_eligible_member_count`, [serviceId])
+  if (!result.rows.length) throw new Error('Invalid service transition')
+  return result.rows[0]
+}

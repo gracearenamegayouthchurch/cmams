@@ -124,19 +124,21 @@ BEGIN
   IF p_method NOT IN ('QR_SCAN','SHORTCODE_ENTRY') OR (p_token_hash IS NULL) = (p_short_code IS NULL) THEN
     RETURN jsonb_build_object('outcome','INVALID_CREDENTIAL');
   END IF;
-  SELECT * INTO a FROM attendance_records WHERE idempotency_key=p_idempotency_key;
-  IF FOUND THEN
-    IF a.service_id <> p_service_id OR a.checkin_method <> p_method THEN RETURN jsonb_build_object('outcome','IDEMPOTENCY_CONFLICT'); END IF;
-    RETURN jsonb_build_object('outcome','ALREADY_CHECKED_IN','checked_in_at',a.checked_in_at);
-  END IF;
   SELECT * INTO s FROM services WHERE id=p_service_id;
   IF NOT FOUND THEN RETURN jsonb_build_object('outcome','INVALID_SERVICE'); END IF;
-  IF s.status <> 'CHECKIN_OPEN' OR now() NOT BETWEEN s.checkin_opens_at AND s.checkin_closes_at THEN
-    RETURN jsonb_build_object('outcome','SERVICE_CLOSED');
-  END IF;
   SELECT * INTO c FROM qr_cards WHERE (p_token_hash IS NOT NULL AND token_hash=p_token_hash)
     OR (p_short_code IS NOT NULL AND short_code=p_short_code) LIMIT 1;
   IF NOT FOUND THEN RETURN jsonb_build_object('outcome','CARD_NOT_RECOGNIZED'); END IF;
+  SELECT * INTO a FROM attendance_records WHERE idempotency_key=p_idempotency_key;
+  IF FOUND THEN
+    IF a.service_id <> p_service_id OR a.person_id <> c.person_id OR a.qr_card_id <> c.id OR a.checkin_method <> p_method THEN
+      RETURN jsonb_build_object('outcome','IDEMPOTENCY_CONFLICT');
+    END IF;
+    RETURN jsonb_build_object('outcome','ALREADY_CHECKED_IN','checked_in_at',a.checked_in_at);
+  END IF;
+  IF s.status <> 'CHECKIN_OPEN' OR now() NOT BETWEEN s.checkin_opens_at AND s.checkin_closes_at THEN
+    RETURN jsonb_build_object('outcome','SERVICE_CLOSED');
+  END IF;
   IF c.status <> 'ACTIVE' THEN RETURN jsonb_build_object('outcome','CARD_REVOKED'); END IF;
   SELECT * INTO p FROM people WHERE id=c.person_id AND deleted_at IS NULL AND lifecycle_stage NOT IN ('ARCHIVED','INACTIVE');
   IF NOT FOUND THEN RETURN jsonb_build_object('outcome','PERSON_INACTIVE'); END IF;

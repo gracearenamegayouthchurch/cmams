@@ -104,31 +104,28 @@ describe('SearchProvider and CommandMenu', () => {
     }
   )
 
-  it('navigates to a top-level route and closes the palette when a nav item is selected', async () => {
+  it('navigates to a church operation route and closes the palette when selected', async () => {
     const screen = await renderWithSearchProvider()
 
     await openCommandPalette(screen)
 
-    await userEvent.click(screen.getByText('Tasks'))
+    await userEvent.click(screen.getByText('Scan'))
 
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/tasks' })
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/scan' })
     await expect
       .element(screen.getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
       .not.toBeInTheDocument()
   })
 
-  it('navigates for nested sidebar items (group with sub-items)', async () => {
+  it('does not expose removed demo routes in the command menu', async () => {
     const screen = await renderWithSearchProvider()
-    const { getByPlaceholder, getByRole } = screen
 
     await openCommandPalette(screen)
 
-    await userEvent.click(getByRole('option', { name: 'Settings Account' }))
+    await expect.element(screen.getByText('Tasks')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByText('Registration'))
 
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/settings/account' })
-    await expect
-      .element(getByPlaceholder(COMMAND_MENU_PLACEHOLDER))
-      .not.toBeInTheDocument()
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/desk' })
   })
 
   it('applies theme and closes the palette when a theme command is chosen', async () => {

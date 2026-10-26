@@ -14,5 +14,6 @@ describe('single-church schema', () => {
     expect(sql).toMatch(/ON qr_cards\s*\(person_id\)\s*WHERE status = 'ACTIVE'/i)
     expect(sql).toMatch(/BEFORE UPDATE OR DELETE ON audit_logs/i)
     expect(sql).toMatch(/ON CONFLICT\s*\(service_id,\s*person_id\) DO NOTHING/i)
+    expect(sql).toMatch(/a\.person_id <> c\.person_id/i)
   })
 })
