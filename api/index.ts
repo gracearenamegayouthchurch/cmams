@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { handleApi } from '../server/app'
-import { resolveApiPath } from '../server/adapter'
+import { handleApi } from '../server/app.js'
+import { resolveApiPath } from '../server/adapter.js'
 
 export default async function handler(req: IncomingMessage & { body?: unknown }, res: ServerResponse) {
   const path = resolveApiPath(req.url ?? '')

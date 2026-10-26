@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { hashPassword, signSession } from './auth'
+import { hashPassword, signSession } from './auth.js'
 
 const mocked = vi.hoisted(() => ({ query: vi.fn(), connect: vi.fn() }))
-vi.mock('./db', () => ({ getDb: () => mocked }))
-import { handleApi } from './app'
+vi.mock('./db.js', () => ({ getDb: () => mocked }))
+import { handleApi } from './app.js'
 
 const secret = 'a'.repeat(64)
 const previousSecret = process.env.SESSION_SECRET

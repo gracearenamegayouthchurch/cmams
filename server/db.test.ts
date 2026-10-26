@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest'
-import { getDb } from './db'
+import { getDb } from './db.js'
 
 const previous = process.env.DATABASE_URL
 afterEach(() => { process.env.DATABASE_URL = previous })

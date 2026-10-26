@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { allow, maskPhone } from './rbac'
-import { hashPassword, verifyPassword, signSession, readSession } from './auth'
+import { allow, maskPhone } from './rbac.js'
+import { hashPassword, verifyPassword, signSession, readSession } from './auth.js'
 
 const secret = 'a'.repeat(64)
 

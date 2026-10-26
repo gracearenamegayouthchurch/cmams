@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { reversedName, validateRegistration, registerPerson } from './people'
+import { reversedName, validateRegistration, registerPerson } from './people.js'
 
 it('checks swapped first and last names when looking for duplicates', () => {
   expect(reversedName('Chinedu Okafor')).toBe('Okafor Chinedu')

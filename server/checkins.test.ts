@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { expect, it } from 'vitest'
-import { credentialLookup, validateManualReason, manualCheckin } from './checkins'
+import { credentialLookup, validateManualReason, manualCheckin } from './checkins.js'
 
 it('hashes an opaque QR token and never uses embedded identity data', () => {
   const raw = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, 22)

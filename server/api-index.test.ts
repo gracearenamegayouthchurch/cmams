@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { jsonBody } from './index'
+import { jsonBody } from '../api/index.js'
 
 it('does not double-encode a JSON body pre-parsed by Vercel as a string', () => {
   expect(jsonBody('{"consent":true}')).toBe('{"consent":true}')

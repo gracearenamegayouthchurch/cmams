@@ -5,7 +5,7 @@ import {
   issueCard,
   revokeCard,
   listActiveCards,
-} from './cards'
+} from './cards.js'
 
 it('creates an opaque, digest-only card record', () => {
   const credential = generateCredential()

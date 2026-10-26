@@ -1,8 +1,8 @@
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import { Writable } from 'node:stream'
-import { getDb } from '../server/db'
-import { createFirstAdmin } from '../server/bootstrap'
+import { getDb } from '../server/db.js'
+import { createFirstAdmin } from '../server/bootstrap.js'
 
 try { process.loadEnvFile('.env.local') } catch { /* optional local env file */ }
 

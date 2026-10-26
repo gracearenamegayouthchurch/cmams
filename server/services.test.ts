@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { validateService, changeServiceStatus } from './services'
+import { validateService, changeServiceStatus } from './services.js'
 
 it('rejects a service with a closing time before its opening time', () => {
   expect(() => validateService({ name: 'Sunday service', category: 'SUNDAY_SERVICE', scheduledStartAt: '2026-11-01T09:00:00Z', opensAt: '2026-11-01T10:00:00Z', closesAt: '2026-11-01T09:00:00Z' })).toThrow()

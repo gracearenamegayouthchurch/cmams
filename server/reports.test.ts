@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { csvCell, turnoutPercent } from './reports'
+import { csvCell, turnoutPercent } from './reports.js'
 
 it('never reports turnout above 100 percent or divides by zero', () => {
   expect(turnoutPercent(10, 0)).toBe(0)

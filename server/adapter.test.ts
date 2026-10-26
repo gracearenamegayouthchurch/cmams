@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveApiPath } from './adapter'
+import { resolveApiPath } from './adapter.js'
 
 it('accepts only the V1 API prefix after the Vercel rewrite', () => {
   expect(resolveApiPath('/api/index?path=services/123')).toBe('/api/v1/services/123')

@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
-import { roles, type StaffRole } from './rbac'
+import { roles, type StaffRole } from './rbac.js'
 
 const scrypt = promisify(nodeScrypt)
 export type Session = { id: string; role: StaffRole }

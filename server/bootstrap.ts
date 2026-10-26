@@ -1,4 +1,4 @@
-import { hashPassword } from './auth'
+import { hashPassword } from './auth.js'
 
 type Queryable = { query: (sql: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> }
 

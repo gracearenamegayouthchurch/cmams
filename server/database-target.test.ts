@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { assertChurchDatabase } from './database-target'
+import { assertChurchDatabase } from './database-target.js'
 
 const ref = 'dyngikqhjxqprjhvrscz'
 

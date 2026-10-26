@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type pg from 'pg'
-import { maskPhone, type StaffRole } from './rbac'
+import { maskPhone, type StaffRole } from './rbac.js'
 
 export class DuplicatePersonError extends Error {
   constructor(readonly matches: unknown[]) { super('Possible duplicate. Review existing profiles before registering.') }

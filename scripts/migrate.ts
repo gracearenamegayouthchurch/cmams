@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import { getDb } from '../server/db'
-import { assertChurchDatabase } from '../server/database-target'
+import { getDb } from '../server/db.js'
+import { assertChurchDatabase } from '../server/database-target.js'
 
 try { process.loadEnvFile('.env.local') } catch { /* optional local env file */ }
 
