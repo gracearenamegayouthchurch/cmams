@@ -61,8 +61,10 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 ### Current Verification Status
 
 - **Verified locally:** `pnpm build`, `pnpm lint`, `pnpm format:check`, `pnpm test:server` (Node unit & API boundary suite), and `pnpm test` (installed Chrome browser workflow tests across login, registration desk consent/duplicates, mobile shortcode scanning/network failure states, dashboard/access-denied states, and browser-rendered card downloads) all pass.
+- **Applied to the church database:** `pnpm migrate:church -- --confirm-project=dyngikqhjxqprjhvrscz` applied the V1 schema on 2026-10-27; `staff_users` is empty pending the interactive first-admin bootstrap.
 - **Pending live credentials/environment:**
-  - Live PostgreSQL migration (`pnpm migrate:church`) and `server/database.integration.test.ts` require `DATABASE_URL` / disposable test DB credentials.
+  - `pnpm bootstrap-admin` requires an interactive terminal and the chosen administrator credentials.
+  - `server/database.integration.test.ts` requires a disposable test DB (it refuses the church project).
   - Local concurrent load test (`pnpm load:local`) requires a running local database with an open test service.
 
 ## Production Cutover (`gracearenamegayouthchurch/cmams` → `https://gamyc.vercel.app/`)
