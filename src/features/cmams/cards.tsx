@@ -1,10 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/cmams-api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  downloadBlob,
+  downloadDataUrl,
+  renderCardPdf,
+  renderCardPng,
+} from './card-render'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { type IssuedCard } from './types'
@@ -19,6 +25,42 @@ type ActiveCard = {
 }
 
 export function CardDownloads({ card }: { card: IssuedCard }) {
+  const [preview, setPreview] = useState('')
+  const [renderError, setRenderError] = useState('')
+  const [pdfBusy, setPdfBusy] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    renderCardPng(card)
+      .then((dataUrl) => {
+        if (active) setPreview(dataUrl)
+      })
+      .catch(() => {
+        if (active) setRenderError('Could not render the card in this browser.')
+      })
+    return () => {
+      active = false
+    }
+  }, [card])
+
+  async function downloadPdf() {
+    setPdfBusy(true)
+    setRenderError('')
+    try {
+      const bytes = await renderCardPdf(card)
+      downloadBlob(
+        new Blob([Uint8Array.from(bytes).buffer], {
+          type: 'application/pdf',
+        }),
+        `${card.memberCode}.pdf`
+      )
+    } catch {
+      setRenderError('Could not prepare the printable PDF. Try again.')
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   return (
     <Card className='border-sky-300'>
       <CardHeader>
@@ -30,29 +72,39 @@ export function CardDownloads({ card }: { card: IssuedCard }) {
           database. If lost, a supervisor must revoke and issue a new
           credential.
         </p>
-        <img
-          src={`data:image/png;base64,${card.png}`}
-          alt={`Attendance card for ${card.memberCode}, shortcode ${card.shortCode}`}
-          className='w-48 rounded-lg border'
-        />
+        {preview ? (
+          <img
+            src={preview}
+            alt={`Attendance card for ${card.memberCode}`}
+            className='w-48 rounded-lg border'
+          />
+        ) : (
+          <div className='flex h-64 w-48 items-center justify-center rounded-lg border p-3 text-center text-sm text-muted-foreground'>
+            Rendering card…
+          </div>
+        )}
         <div className='flex flex-wrap gap-3'>
-          <Button asChild>
-            <a
-              download={`${card.memberCode}.png`}
-              href={`data:image/png;base64,${card.png}`}
-            >
-              Download PNG
-            </a>
+          <Button
+            type='button'
+            disabled={!preview}
+            onClick={() => downloadDataUrl(preview, `${card.memberCode}.png`)}
+          >
+            Download PNG
           </Button>
-          <Button variant='outline' asChild>
-            <a
-              download={`${card.memberCode}.pdf`}
-              href={`data:application/pdf;base64,${card.pdf}`}
-            >
-              Download printable PDF
-            </a>
+          <Button
+            type='button'
+            variant='outline'
+            disabled={!preview || pdfBusy}
+            onClick={() => void downloadPdf()}
+          >
+            {pdfBusy ? 'Preparing PDF…' : 'Download printable PDF'}
           </Button>
         </div>
+        {renderError && (
+          <p role='alert' className='text-sm text-destructive'>
+            {renderError}
+          </p>
+        )}
       </CardContent>
     </Card>
   )
@@ -126,7 +178,7 @@ export function CardsPage() {
             </p>
           </CardContent>
         </Card>
-        {issued && <CardDownloads card={issued} />}
+        {issued && <CardDownloads key={issued.credential} card={issued} />}
         <div className='space-y-2'>
           <Label htmlFor='card-search'>Find active cards</Label>
           <Input

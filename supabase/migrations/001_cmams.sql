@@ -19,6 +19,7 @@ CREATE TABLE staff_users (
   password_hash text NOT NULL, role staff_role NOT NULL, is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(), last_login_at timestamptz
 );
+CREATE UNIQUE INDEX staff_users_email_lower_key ON staff_users (lower(email));
 CREATE SEQUENCE member_code_seq START 1001;
 CREATE TABLE people (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), household_id uuid REFERENCES households(id) ON DELETE SET NULL,
@@ -97,6 +98,7 @@ CREATE FUNCTION reject_audit_changes() RETURNS trigger LANGUAGE plpgsql SET sear
 BEGIN RAISE EXCEPTION 'audit_logs is append-only'; END;
 $$;
 CREATE TRIGGER audit_append_only BEFORE UPDATE OR DELETE ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_audit_changes();
+CREATE TRIGGER audit_no_truncate BEFORE TRUNCATE ON audit_logs FOR EACH STATEMENT EXECUTE FUNCTION reject_audit_changes();
 
 ALTER TABLE compounds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
@@ -131,7 +133,7 @@ BEGIN
   IF NOT FOUND THEN RETURN jsonb_build_object('outcome','CARD_NOT_RECOGNIZED'); END IF;
   SELECT * INTO a FROM attendance_records WHERE idempotency_key=p_idempotency_key;
   IF FOUND THEN
-    IF a.service_id <> p_service_id OR a.person_id <> c.person_id OR a.qr_card_id <> c.id OR a.checkin_method <> p_method THEN
+    IF a.service_id <> p_service_id OR a.person_id <> c.person_id OR a.qr_card_id IS DISTINCT FROM c.id OR a.checkin_method <> p_method THEN
       RETURN jsonb_build_object('outcome','IDEMPOTENCY_CONFLICT');
     END IF;
     RETURN jsonb_build_object('outcome','ALREADY_CHECKED_IN','checked_in_at',a.checked_in_at);
@@ -148,6 +150,16 @@ BEGIN
     VALUES (p_service_id,p.id,c.id,p_idempotency_key,p_method,p_staff_id,p.lifecycle_stage,p.compound_id,p.course_id)
     ON CONFLICT (service_id, person_id) DO NOTHING RETURNING * INTO a;
   EXCEPTION WHEN unique_violation THEN
+    -- A concurrent retry with the same event key can lose the insert race. Re-read
+    -- the committed row so the replay returns the stable ALREADY_CHECKED_IN outcome.
+    SELECT * INTO a FROM attendance_records WHERE idempotency_key=p_idempotency_key;
+    IF FOUND THEN
+      IF a.service_id <> p_service_id OR a.person_id <> c.person_id OR a.qr_card_id IS DISTINCT FROM c.id OR a.checkin_method <> p_method THEN
+        RETURN jsonb_build_object('outcome','IDEMPOTENCY_CONFLICT');
+      END IF;
+      RETURN jsonb_build_object('outcome','ALREADY_CHECKED_IN','checked_in_at',a.checked_in_at,
+        'person',jsonb_build_object('member_code',p.member_code,'full_name',p.first_name || ' ' || p.last_name));
+    END IF;
     RETURN jsonb_build_object('outcome','IDEMPOTENCY_CONFLICT');
   END;
   IF a.id IS NOT NULL THEN

@@ -13,7 +13,12 @@ describe('single-church schema', () => {
     expect(sql).toMatch(/UNIQUE\s*\(service_id,\s*person_id\)/i)
     expect(sql).toMatch(/ON qr_cards\s*\(person_id\)\s*WHERE status = 'ACTIVE'/i)
     expect(sql).toMatch(/BEFORE UPDATE OR DELETE ON audit_logs/i)
+    expect(sql).toMatch(/BEFORE TRUNCATE ON audit_logs/i)
+    expect(sql).toMatch(/staff_users_email_lower_key/i)
     expect(sql).toMatch(/ON CONFLICT\s*\(service_id,\s*person_id\) DO NOTHING/i)
     expect(sql).toMatch(/a\.person_id <> c\.person_id/i)
+    expect(sql).toMatch(
+      /EXCEPTION WHEN unique_violation[\s\S]*WHERE idempotency_key=p_idempotency_key/i
+    )
   })
 })

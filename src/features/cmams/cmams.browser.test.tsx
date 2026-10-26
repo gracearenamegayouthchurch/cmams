@@ -12,6 +12,7 @@ import { page, userEvent } from 'vitest/browser'
 import { ApiError } from '@/lib/cmams-api'
 import { ThemeProvider } from '@/context/theme-provider'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { CardDownloads } from './cards'
 import { DashboardPage } from './dashboard'
 import { DeskPage } from './desk'
 import { LoginPage } from './login'
@@ -218,5 +219,26 @@ describe('CMAMS browser workflows', () => {
     )
     await expect.element(screen.getByText('60%')).toBeVisible()
     await expect.element(screen.getByText('Access denied')).toBeVisible()
+  })
+
+  it('renders a downloadable card preview in the browser', async () => {
+    const screen = await renderWithShell(
+      <CardDownloads
+        card={{
+          memberCode: 'CM-1001',
+          shortCode: '9K4-M7X',
+          credential: `cma://v1/${'A'.repeat(22)}`,
+        }}
+      />
+    )
+    await expect
+      .element(screen.getByAltText(/Attendance card for CM-1001/))
+      .toBeVisible()
+    await expect
+      .element(screen.getByRole('button', { name: /download png/i }))
+      .toBeEnabled()
+    await expect
+      .element(screen.getByRole('button', { name: /download printable pdf/i }))
+      .toBeEnabled()
   })
 })

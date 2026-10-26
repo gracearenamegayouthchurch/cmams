@@ -8,6 +8,7 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 - **API:** Serverless Node/TypeScript `/api/v1/*` handlers (`api/index.ts` → `server/app.ts`) hosted on Vercel (and mounted via Vite middleware in local `pnpm dev`).
 - **Database:** Supabase PostgreSQL (`supabase/migrations/001_cmams.sql`) accessed exclusively from the server; RLS is enabled on every table with zero direct browser policies.
 - **Single-church V1:** No campuses table, campus identifiers, or campus filters. Offline queueing/reconciliation (V3) and member self-service portals (V2) are intentionally excluded; network failures are never reported as successful check-ins.
+- **Deployment hardening:** Node 22 runtime, no native image/PDF dependencies, strict security headers and CSP in `vercel.json`, and server-only database access.
 
 ## Operational Routes
 
@@ -19,7 +20,7 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 | `/desk`      | Consent-first registration, `pg_trgm` swapped-name & shared-phone duplicate review, initial card issuance, manual check-in | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`                  |
 | `/directory` | Single-church directory with role-based phone masking                                                                      | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`, `PASTOR_VIEWER` |
 | `/services`  | Schedule gatherings, open check-in windows, close & freeze eligible member count                                           | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
-| `/cards`     | Supervised active-card lookup, revocation, and atomic replacement (PNG + printable PDF)                                    | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
+| `/cards`     | Supervised active-card lookup, revocation, and atomic replacement (browser-rendered PNG + printable PDF)                   | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
 | `/reports`   | Audited attendance CSV export and 3-Sunday consecutive absentee pastoral list                                              | `ADMIN`, `PASTOR_VIEWER`                                            |
 
 ## Local Setup
@@ -49,17 +50,17 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 
 ## Verification & Scripts
 
-- `pnpm test:server` — Node unit and API boundary suite (auth, RBAC, CSRF/origin validation, phone masking, duplicate matching, card SHA-256 hashing & PNG/PDF generation, atomic check-in outcomes, CSV formula escaping, and Vercel/Vite URL adapters).
+- `pnpm test:server` — Node unit and API boundary suite (auth, RBAC, CSRF/origin validation, phone masking, duplicate matching, card SHA-256 hashing and collision-safe issuance, atomic check-in outcomes, CSV formula escaping, and Vercel/Vite URL adapters).
 - `pnpm build` — TypeScript (`tsconfig.json` + `tsconfig.server.json`) and Vite production bundle.
 - `pnpm lint` — ESLint across frontend, server, API, and scripts.
 - `pnpm format:check` — Prettier formatting check.
 - `CMAMS_TEST_DATABASE_ISOLATED=yes CMAMS_TEST_DATABASE_URL=... pnpm test:server` — Opt-in PostgreSQL constraint integration test against a separate disposable database (refuses to run against `dyngikqhjxqprjhvrscz`).
 - `pnpm load:local` — Local-only 50-concurrent-scan contention smoke test (`scripts/load-checkins.ts`; refuses non-localhost URLs).
-- `pnpm test` — Vitest browser suite (requires Playwright Chromium via `pnpm test:browser:install`).
+- `pnpm test` — Vitest browser suite using the installed Chrome channel by default. Set `CI=1` with Playwright Chromium installed via `pnpm test:browser:install` for CI runners.
 
 ### Current Verification Status
 
-- **Verified locally:** `pnpm build`, `pnpm lint`, `pnpm format:check`, `pnpm test:server` (Node unit & API boundary suite), and `pnpm test` (including headless Chromium browser workflow tests across login, registration desk consent/duplicates, mobile shortcode scanning/network failure states, and dashboard/access-denied states) all pass.
+- **Verified locally:** `pnpm build`, `pnpm lint`, `pnpm format:check`, `pnpm test:server` (Node unit & API boundary suite), and `pnpm test` (installed Chrome browser workflow tests across login, registration desk consent/duplicates, mobile shortcode scanning/network failure states, dashboard/access-denied states, and browser-rendered card downloads) all pass.
 - **Pending live credentials/environment:**
   - Live PostgreSQL migration (`pnpm migrate:church`) and `server/database.integration.test.ts` require `DATABASE_URL` / disposable test DB credentials.
   - Local concurrent load test (`pnpm load:local`) requires a running local database with an open test service.

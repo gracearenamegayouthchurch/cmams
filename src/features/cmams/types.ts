@@ -33,6 +33,5 @@ export type Summary = {
 export type IssuedCard = {
   memberCode: string
   shortCode: string
-  png: string
-  pdf: string
+  credential: string
 }
