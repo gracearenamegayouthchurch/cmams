@@ -61,9 +61,12 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 ### Current Verification Status
 
 - **Verified locally:** `pnpm build`, `pnpm lint`, `pnpm format:check`, `pnpm test:server` (Node unit & API boundary suite), and `pnpm test` (installed Chrome browser workflow tests across login, registration desk consent/duplicates, mobile shortcode scanning/network failure states, dashboard/access-denied states, and browser-rendered card downloads) all pass.
-- **Applied to the church database:** `pnpm migrate:church -- --confirm-project=dyngikqhjxqprjhvrscz` applied the V1 schema on 2026-10-27; `staff_users` is empty pending the interactive first-admin bootstrap.
-- **Pending live credentials/environment:**
-  - `pnpm bootstrap-admin` requires an interactive terminal and the chosen administrator credentials.
+- **Applied to the church database:** `pnpm migrate:church -- --confirm-project=dyngikqhjxqprjhvrscz` applied the V1 schema on 2026-10-27. The first administrator was created with `pnpm bootstrap-admin`; `staff_users` contains one active `ADMIN` row with a valid password hash.
+- **Deployed live:** `https://gamyc.vercel.app` serves the V1 build from the recreated `gracearenamegayouthchurch/cmams` repository. `/login` and `/dashboard` return `200`; `/api/v1/session` returns `401` without a cookie; a bad-credential login returns `401` from the live database; `/api/v1/logout` returns `200`.
+- **Pending live verification:**
+  - Administrator sign-in at `https://gamyc.vercel.app/login` with the real credentials (cannot be automated without the password).
+  - GitHub user `trimwet` must accept the pending `write` collaborator invitation.
+  - Vercel Git auto-deploy requires the Vercel GitHub App to be granted access to the recreated repository; until then, deploy with `vercel --prod --scope gamyc`.
   - `server/database.integration.test.ts` requires a disposable test DB (it refuses the church project).
   - Local concurrent load test (`pnpm load:local`) requires a running local database with an open test service.
 
@@ -72,7 +75,7 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 1. Authenticate Vercel CLI (`vercel login`) under the account owning the existing project aliased to `https://gamyc.vercel.app/` — **do not delete the Vercel project**.
 2. Set `DATABASE_URL` and `SESSION_SECRET` in Vercel Production/Preview environment variables, run `pnpm migrate:church -- --confirm-project=dyngikqhjxqprjhvrscz`, and run `pnpm bootstrap-admin`.
 3. Record the existing GitHub repo settings, replace **only** `gracearenamegayouthchurch/cmams`, push `main`, and invite GitHub user `trimwet` as collaborator.
-4. Reconnect the existing Vercel project's Git integration to the recreated `gracearenamegayouthchurch/cmams` repository and verify `https://gamyc.vercel.app/login` end-to-end.
+4. Reconnect the existing Vercel project's Git integration to the recreated `gracearenamegayouthchurch/cmams` repository (grant the Vercel GitHub App access to the new repository under GitHub Settings → Applications, then run `vercel git connect https://github.com/gracearenamegayouthchurch/cmams.git --scope gamyc`) and verify `https://gamyc.vercel.app/login` end-to-end.
 
 ## Attribution & License
 
