@@ -9,3 +9,14 @@ it('shows an usher only the scan operation', () => {
     'Reports',
   ])
 })
+
+it('shows staff management only to administrators', () => {
+  expect(visibleNavigation('ADMIN')).toContain('Staff')
+  for (const role of [
+    'USHER_SCANNER',
+    'REGISTRATION_DESK',
+    'SERVICE_SUPERVISOR',
+    'PASTOR_VIEWER',
+  ] as const)
+    expect(visibleNavigation(role)).not.toContain('Staff')
+})

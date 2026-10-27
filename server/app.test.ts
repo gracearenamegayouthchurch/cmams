@@ -12,6 +12,82 @@ afterEach(() => {
 })
 
 describe('API boundary', () => {
+  it('rejects staff listing for a supervisor and shows an admin safe staff details', async () => {
+    process.env.SESSION_SECRET = secret
+    let actorRole: 'SERVICE_SUPERVISOR' | 'ADMIN' = 'SERVICE_SUPERVISOR'
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
+      ? [{ id: 'staff', full_name: 'Admin', email: 'admin@example.com', role: actorRole, is_active: true, session_version: 0 }]
+      : [{ id: 'other', email: 'other@example.com', full_name: 'Other', role: 'USHER_SCANNER', is_active: true }] }))
+    const supervisor = signSession({ id: 'staff', role: 'SERVICE_SUPERVISOR' }, secret)
+    expect((await handleApi(new Request('https://church.example/api/v1/staff', { headers: { cookie: `cmams_session=${supervisor}` } }))).status).toBe(403)
+    actorRole = 'ADMIN'
+    const admin = signSession({ id: 'staff', role: 'ADMIN' }, secret)
+    const response = await handleApi(new Request('https://church.example/api/v1/staff', { headers: { cookie: `cmams_session=${admin}` } }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ staff: [{ email: 'other@example.com', role: 'USHER_SCANNER' }] })
+  })
+
+  it('blocks old sessions after a password reset or role change', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockResolvedValue({ rows: [{ id: 'staff', full_name: 'Admin', email: 'admin@example.com', role: 'ADMIN', session_version: 1 }] })
+    const previous = signSession({ id: 'staff', role: 'ADMIN', version: 0 }, secret)
+    expect((await handleApi(new Request('https://church.example/api/v1/session', { headers: { cookie: `cmams_session=${previous}` } }))).status).toBe(401)
+  })
+
+  it('forces a reset user to change their password before opening the directory', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockResolvedValue({ rows: [{ id: 'staff', full_name: 'Staff', email: 'staff@example.com', role: 'REGISTRATION_DESK', session_version: 0, must_change_password: true }] })
+    const token = signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)
+    const response = await handleApi(new Request('https://church.example/api/v1/people', { headers: { cookie: `cmams_session=${token}` } }))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  })
+
+  it('marks a temporary-password login as restricted without exposing the hash', async () => {
+    process.env.SESSION_SECRET = secret
+    const passwordHash = await hashPassword('temporary-secret-123')
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('WHERE email=lower')
+      ? [{ id: 'staff', full_name: 'New Staff', email: 'new@example.com', role: 'USHER_SCANNER', password_hash: passwordHash, session_version: 2, must_change_password: true }]
+      : [] }))
+    const response = await handleApi(new Request('https://church.example/api/v1/login', {
+      method: 'POST', headers: { origin: 'https://church.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'new@example.com', password: 'temporary-secret-123' }),
+    }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ staff: { must_change_password: true } })
+    expect(response.headers.get('set-cookie')).toContain('HttpOnly')
+  })
+
+  it('never creates staff from a supervisor account', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockResolvedValue({ rows: [{ id: 'staff', full_name: 'Supervisor', email: 'supervisor@example.com', role: 'SERVICE_SUPERVISOR', session_version: 0 }] })
+    const token = signSession({ id: 'staff', role: 'SERVICE_SUPERVISOR' }, secret)
+    const response = await handleApi(new Request('https://church.example/api/v1/staff', {
+      method: 'POST', headers: { cookie: `cmams_session=${token}`, origin: 'https://church.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'new@example.com', fullName: 'New Staff', role: 'ADMIN' }),
+    }))
+    expect(response.status).toBe(403)
+  })
+
+  it('rejects deactivating the last active administrator', async () => {
+    process.env.SESSION_SECRET = secret
+    const id = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    mocked.query.mockResolvedValue({ rows: [{ id, full_name: 'Admin', email: 'admin@example.com', role: 'ADMIN', session_version: 0 }] })
+    const statements: string[] = []
+    mocked.connect.mockResolvedValue({ query: async (sql: string) => {
+      statements.push(sql)
+      if (sql.includes('FROM staff_users WHERE id=')) return { rows: [{ id, role: 'ADMIN', is_active: true }] }
+      if (sql.includes('count(*)')) return { rows: [{ count: '1' }] }
+      return { rows: [] }
+    }, release: () => {} })
+    const token = signSession({ id, role: 'ADMIN' }, secret)
+    const response = await handleApi(new Request(`https://church.example/api/v1/staff/${id}`, {
+      method: 'PATCH', headers: { cookie: `cmams_session=${token}`, origin: 'https://church.example', 'content-type': 'application/json' }, body: JSON.stringify({ isActive: false }),
+    }))
+    expect(response.status).toBe(409)
+    expect(statements.some((sql) => sql.includes('ROLLBACK'))).toBe(true)
+    expect(statements.some((sql) => sql.includes('UPDATE staff_users'))).toBe(false)
+  })
   it('does not reveal a session without a signed cookie', async () => {
     process.env.SESSION_SECRET = secret
     const response = await handleApi(

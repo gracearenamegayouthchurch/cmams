@@ -19,8 +19,10 @@ import {
   changeServiceStatus,
   createService,
   listServices,
+  ServiceTransitionError,
 } from './services.js'
 import { IdempotencyConflict, manualCheckin, scanCard } from './checkins.js'
+import { StaffError, changeOwnPassword, createStaff, listStaff, resetStaffPassword, updateStaff } from './staff.js'
 import {
   absenteeList,
   attendanceList,
@@ -60,13 +62,13 @@ async function currentStaff(request: Request) {
   const session = staffSession(request)
   if (!session) return null
   const result = await getDb().query(
-    'SELECT id, full_name, email, role FROM staff_users WHERE id=$1 AND is_active',
+    'SELECT id, full_name, email, role, session_version, must_change_password FROM staff_users WHERE id=$1 AND is_active',
     [session.id]
   )
   const staff = result.rows[0] as
-    | { id: string; full_name: string; email: string; role: Session['role'] }
+    | { id: string; full_name: string; email: string; role: Session['role']; session_version?: number; must_change_password?: boolean }
     | undefined
-  return staff && staff.role === session.role ? staff : null
+  return staff && staff.role === session.role && Number(staff.session_version ?? 0) === (session.version ?? 0) ? staff : null
 }
 
 export async function handleApi(request: Request): Promise<Response> {
@@ -84,7 +86,7 @@ export async function handleApi(request: Request): Promise<Response> {
     if (method === 'POST' && path === '/api/v1/login') {
       const body = loginFields.parse(await request.json())
       const result = await getDb().query(
-        'SELECT id,full_name,email,role,password_hash FROM staff_users WHERE email=lower($1) AND is_active',
+        'SELECT id,full_name,email,role,password_hash,session_version,must_change_password FROM staff_users WHERE email=lower($1) AND is_active',
         [body.email]
       )
       const staff = result.rows[0] as
@@ -94,6 +96,8 @@ export async function handleApi(request: Request): Promise<Response> {
             email: string
             role: Session['role']
             password_hash: string
+            session_version?: number
+            must_change_password?: boolean
           }
         | undefined
       if (!staff || !(await verifyPassword(body.password, staff.password_hash)))
@@ -105,7 +109,7 @@ export async function handleApi(request: Request): Promise<Response> {
           ? '; Secure'
           : ''
       const token = signSession(
-        { id: staff.id, role: staff.role },
+        { id: staff.id, role: staff.role, version: staff.session_version ?? 0 },
         process.env.SESSION_SECRET ?? ''
       )
       await getDb().query(
@@ -119,6 +123,7 @@ export async function handleApi(request: Request): Promise<Response> {
             full_name: staff.full_name,
             email: staff.email,
             role: staff.role,
+            must_change_password: staff.must_change_password ?? false,
           },
         },
         200,
@@ -138,7 +143,37 @@ export async function handleApi(request: Request): Promise<Response> {
     }
     const staff = await currentStaff(request)
     if (!staff) return json({ error: 'Authentication required' }, 401)
-    if (method === 'GET' && path === '/api/v1/session') return json({ staff })
+    if (method === 'GET' && path === '/api/v1/session')
+      return json({
+        staff: {
+          id: staff.id,
+          full_name: staff.full_name,
+          email: staff.email,
+          role: staff.role,
+          must_change_password: staff.must_change_password ?? false,
+        },
+      })
+    if (method === 'POST' && path === '/api/v1/change-password') {
+      const input = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(12).max(200) }).strict().parse(await request.json())
+      const version = await changeOwnPassword(getDb(), staff.id, input.currentPassword, input.newPassword)
+      const secure = url.protocol === 'https:' || process.env.NODE_ENV === 'production' ? '; Secure' : ''
+      const token = signSession({ id: staff.id, role: staff.role, version }, process.env.SESSION_SECRET ?? '')
+      return json({ ok: true }, 200, { 'set-cookie': `${cookieName}=${token}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=28800` })
+    }
+    if (staff.must_change_password) return json({ error: 'Change your temporary password to continue', code: 'PASSWORD_CHANGE_REQUIRED' }, 403)
+    if (path === '/api/v1/staff' && (method === 'GET' || method === 'POST')) {
+      if (!allow(staff.role, 'staff')) return json({ error: 'Action not permitted' }, 403)
+      if (method === 'GET') return json({ staff: await listStaff(getDb()) })
+      return json(await createStaff(getDb(), await request.json(), staff.id), 201)
+    }
+    const staffMatch = path.match(/^\/api\/v1\/staff\/([0-9a-f-]{36})(?:\/(reset-password))?$/i)
+    if (staffMatch && (method === 'PATCH' || method === 'POST')) {
+      if (!allow(staff.role, 'staff')) return json({ error: 'Action not permitted' }, 403)
+      const staffId = z.uuid().parse(staffMatch[1])
+      if (method === 'PATCH' && !staffMatch[2]) return json({ staff: await updateStaff(getDb(), staffId, await request.json(), staff.id) })
+      if (method === 'POST' && staffMatch[2]) return json(await resetStaffPassword(getDb(), staffId, staff.id))
+      return json({ error: 'Not found' }, 404)
+    }
     if (method === 'GET' && path === '/api/v1/cards') {
       if (!allow(staff.role, 'cards'))
         return json({ error: 'Action not permitted' }, 403)
@@ -278,11 +313,8 @@ export async function handleApi(request: Request): Promise<Response> {
           ),
         })
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message === 'Invalid service transition'
-        )
-          return json({ error: error.message }, 409)
+        if (error instanceof ServiceTransitionError)
+          return json({ error: error.message, code: error.code }, 409)
         throw error
       }
     }
@@ -379,6 +411,7 @@ export async function handleApi(request: Request): Promise<Response> {
       )
     return json({ error: 'Endpoint not implemented' }, 501)
   } catch (error) {
+    if (error instanceof StaffError) return json({ error: error.message }, error.status)
     if (error instanceof DuplicatePersonError)
       return json({ error: error.message, matches: error.matches }, 409)
     if (error instanceof IdempotencyConflict)

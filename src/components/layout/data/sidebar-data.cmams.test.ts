@@ -14,6 +14,7 @@ describe('CMAMS navigation', () => {
       'Services',
       'Cards',
       'Reports',
+      'Staff',
     ])
   })
 })

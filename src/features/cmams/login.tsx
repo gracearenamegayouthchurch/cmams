@@ -32,7 +32,11 @@ export function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       })
-      await navigate({ to: homeForRole[staff.role] as '/' })
+      await navigate({
+        to: (staff.must_change_password
+          ? '/change-password'
+          : homeForRole[staff.role]) as '/',
+      })
     } catch (reason) {
       setError(
         reason instanceof Error

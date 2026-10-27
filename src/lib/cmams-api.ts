@@ -8,6 +8,7 @@ export type Staff = {
     | 'SERVICE_SUPERVISOR'
     | 'ADMIN'
     | 'PASTOR_VIEWER'
+  must_change_password?: boolean
 }
 
 export class ApiError extends Error {

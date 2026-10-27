@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import { roles, type StaffRole } from './rbac.js'
 
 const scrypt = promisify(nodeScrypt)
-export type Session = { id: string; role: StaffRole }
+export type Session = { id: string; role: StaffRole; version?: number }
 
 export async function hashPassword(password: string): Promise<string> {
   if (password.length < 12) throw new Error('Staff passwords must contain at least 12 characters')
@@ -40,8 +40,8 @@ export function readSession(token: string | undefined, secret: string, now = Dat
   try {
     const data: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
     if (typeof data !== 'object' || !data) return null
-    const { id, role, exp } = data as Record<string, unknown>
-    if (typeof id !== 'string' || !roles.includes(role as StaffRole) || typeof exp !== 'number' || exp <= now) return null
-    return { id, role: role as StaffRole }
+    const { id, role, exp, version } = data as Record<string, unknown>
+    if (typeof id !== 'string' || !roles.includes(role as StaffRole) || typeof exp !== 'number' || exp <= now || (version !== undefined && (!Number.isSafeInteger(version) || Number(version) < 0))) return null
+    return { id, role: role as StaffRole, version: version as number | undefined }
   } catch { return null }
 }

@@ -19,6 +19,8 @@ import { DirectoryPage } from './directory'
 import { LoginPage } from './login'
 import { QueryState } from './query-state'
 import { ScanPage } from './scan'
+import { ServicesPage } from './services'
+import { StaffPage } from './staff'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -78,6 +80,67 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('CMAMS browser workflows', () => {
+  it('shows an administrator the temporary password once for a new staff account', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST' && String(input) === '/api/v1/staff')
+          return jsonResponse(
+            {
+              staff: {
+                id: 'new',
+                email: 'usher@church.invalid',
+                role: 'USHER_SCANNER',
+              },
+              temporaryPassword: 'temporary-long-password-1234',
+            },
+            201
+          )
+        return jsonResponse({ staff: [] })
+      })
+    )
+    const screen = await renderWithShell(<StaffPage />)
+    await userEvent.type(screen.getByLabelText('Full name'), 'New Usher')
+    await userEvent.type(screen.getByLabelText('Email'), 'usher@church.invalid')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Create account' })
+    )
+    await expect
+      .element(screen.getByLabelText('Temporary password'))
+      .toHaveValue('temporary-long-password-1234')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'I saved it securely' })
+    )
+    expect(screen.getByLabelText('Temporary password').query()).toBeNull()
+  })
+  it('explains why a future service cannot open check-in yet', async () => {
+    const opens = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const closes = new Date(opens.getTime() + 4 * 60 * 60 * 1000)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          services: [
+            {
+              id: '9ff41440-0d63-428e-ad12-039d0c244ca8',
+              name: 'Sunday Service',
+              status: 'SCHEDULED',
+              category: 'SUNDAY_SERVICE',
+              scheduled_start_at: opens.toISOString(),
+              checkin_opens_at: opens.toISOString(),
+              checkin_closes_at: closes.toISOString(),
+              locked_eligible_member_count: null,
+            },
+          ],
+        })
+      )
+    )
+    const screen = await renderWithShell(<ServicesPage />)
+    await expect
+      .element(screen.getByRole('button', { name: 'Open check-in' }))
+      .toBeDisabled()
+    await expect.element(screen.getByText(/Check-in opens on/i)).toBeVisible()
+  })
   it('shows a clear sign-in error when credentials are rejected', async () => {
     vi.stubGlobal(
       'fetch',

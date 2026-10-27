@@ -18,6 +18,7 @@
     "test:server": "vitest run --project server",
     "bootstrap-admin": "tsx scripts/bootstrap-admin.ts",
     "migrate:church": "tsx scripts/migrate.ts",
+    "migrate:staff": "tsx scripts/migrate-staff.ts",
     "load:local": "tsx scripts/load-checkins.ts",
     "test:watch": "vitest --browser.headless",
     "test:ui": "vitest --ui --browser.headless",

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarPlus, CheckCircle2, Clock } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
@@ -60,13 +60,18 @@ function nextSundayPreset() {
 
 function readableServiceError(message: string): string {
   if (message.includes('Invalid service transition')) {
-    return 'Check-in can only be opened during the scheduled check-in window.'
+    return 'This service is no longer scheduled or its status changed. Refresh the list and try again.'
   }
   return message
 }
 
 export function ServicesPage() {
   const queryClient = useQueryClient()
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000)
+    return () => window.clearInterval(timer)
+  }, [])
   const services = useQuery({
     queryKey: ['services'],
     queryFn: () => api<{ services: Service[] }>('/api/v1/services'),
@@ -94,6 +99,12 @@ export function ServicesPage() {
       await queryClient.invalidateQueries({ queryKey: ['services'] })
     },
   })
+  const failedOpenId = mutation.variables?.path.match(
+    /^\/api\/v1\/services\/([0-9a-f-]{36})\/open$/i
+  )?.[1]
+  const failedService = services.data?.services.find(
+    (item) => item.id === failedOpenId
+  )
 
   function applySundayPreset() {
     const preset = nextSundayPreset()
@@ -146,7 +157,13 @@ export function ServicesPage() {
           role='alert'
           className='mb-6 rounded-xl border border-destructive/35 bg-destructive/10 px-4 py-3 text-sm text-destructive'
         >
-          {readableServiceError(mutation.error.message)}
+          {readableServiceError(mutation.error.message)}{' '}
+          {failedService &&
+            mutation.error.message.includes('has not opened yet') &&
+            `Check-in opens on ${formatDateTime(failedService.checkin_opens_at)}.`}
+          {failedService &&
+            mutation.error.message.includes('already ended') &&
+            `The window ended on ${formatDateTime(failedService.checkin_closes_at)}. Schedule another service.`}
         </div>
       )}
 
@@ -287,21 +304,40 @@ export function ServicesPage() {
                 </div>
                 <div className='flex gap-2'>
                   {service.status === 'SCHEDULED' && (
-                    <Button
-                      size='sm'
-                      disabled={mutation.isPending}
-                      onClick={() => {
-                        setMessage('')
-                        void mutation
-                          .mutateAsync({
-                            path: `/api/v1/services/${service.id}/open`,
-                            body: {},
-                          })
-                          .catch(() => {})
-                      }}
-                    >
-                      Open check-in
-                    </Button>
+                    <div className='space-y-1 text-right'>
+                      <Button
+                        size='sm'
+                        disabled={
+                          mutation.isPending ||
+                          now < Date.parse(service.checkin_opens_at) ||
+                          now > Date.parse(service.checkin_closes_at)
+                        }
+                        onClick={() => {
+                          setMessage('')
+                          void mutation
+                            .mutateAsync({
+                              path: `/api/v1/services/${service.id}/open`,
+                              body: {},
+                            })
+                            .catch(() => {})
+                        }}
+                      >
+                        Open check-in
+                      </Button>
+                      {now < Date.parse(service.checkin_opens_at) && (
+                        <p className='max-w-48 text-xs text-muted-foreground'>
+                          Check-in opens on{' '}
+                          {formatDateTime(service.checkin_opens_at)}.
+                        </p>
+                      )}
+                      {now > Date.parse(service.checkin_closes_at) && (
+                        <p className='max-w-48 text-xs text-muted-foreground'>
+                          This check-in window ended on{' '}
+                          {formatDateTime(service.checkin_closes_at)}. Schedule
+                          a new service to check in arrivals.
+                        </p>
+                      )}
+                    </div>
                   )}
                   {service.status === 'CHECKIN_OPEN' && (
                     <Button

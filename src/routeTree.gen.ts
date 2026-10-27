@@ -17,6 +17,7 @@ import { Route as errors404RouteImport } from './routes/(errors)/404'
 import { Route as errors403RouteImport } from './routes/(errors)/403'
 import { Route as errors401RouteImport } from './routes/(errors)/401'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
+import { Route as AuthenticatedStaffIndexRouteImport } from './routes/_authenticated/staff/index'
 import { Route as AuthenticatedServicesIndexRouteImport } from './routes/_authenticated/services/index'
 import { Route as AuthenticatedScanIndexRouteImport } from './routes/_authenticated/scan/index'
 import { Route as AuthenticatedReportsIndexRouteImport } from './routes/_authenticated/reports/index'
@@ -24,6 +25,7 @@ import { Route as AuthenticatedMembersIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedDirectoryIndexRouteImport } from './routes/_authenticated/directory/index'
 import { Route as AuthenticatedDeskIndexRouteImport } from './routes/_authenticated/desk/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
+import { Route as AuthenticatedChangePasswordIndexRouteImport } from './routes/_authenticated/change-password/index'
 import { Route as AuthenticatedCardsIndexRouteImport } from './routes/_authenticated/cards/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -65,6 +67,11 @@ const authLoginRoute = authLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedStaffIndexRoute = AuthenticatedStaffIndexRouteImport.update({
+  id: '/staff/',
+  path: '/staff/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedServicesIndexRoute =
   AuthenticatedServicesIndexRouteImport.update({
     id: '/services/',
@@ -105,6 +112,12 @@ const AuthenticatedDashboardIndexRoute =
     path: '/dashboard/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedChangePasswordIndexRoute =
+  AuthenticatedChangePasswordIndexRouteImport.update({
+    id: '/change-password/',
+    path: '/change-password/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCardsIndexRoute = AuthenticatedCardsIndexRouteImport.update({
   id: '/cards/',
   path: '/cards/',
@@ -120,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/cards/': typeof AuthenticatedCardsIndexRoute
+  '/change-password/': typeof AuthenticatedChangePasswordIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/desk/': typeof AuthenticatedDeskIndexRoute
   '/directory/': typeof AuthenticatedDirectoryIndexRoute
@@ -127,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/reports/': typeof AuthenticatedReportsIndexRoute
   '/scan/': typeof AuthenticatedScanIndexRoute
   '/services/': typeof AuthenticatedServicesIndexRoute
+  '/staff/': typeof AuthenticatedStaffIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
@@ -137,6 +152,7 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
   '/cards': typeof AuthenticatedCardsIndexRoute
+  '/change-password': typeof AuthenticatedChangePasswordIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/desk': typeof AuthenticatedDeskIndexRoute
   '/directory': typeof AuthenticatedDirectoryIndexRoute
@@ -144,6 +160,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsIndexRoute
   '/scan': typeof AuthenticatedScanIndexRoute
   '/services': typeof AuthenticatedServicesIndexRoute
+  '/staff': typeof AuthenticatedStaffIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -156,6 +173,7 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/cards/': typeof AuthenticatedCardsIndexRoute
+  '/_authenticated/change-password/': typeof AuthenticatedChangePasswordIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/desk/': typeof AuthenticatedDeskIndexRoute
   '/_authenticated/directory/': typeof AuthenticatedDirectoryIndexRoute
@@ -163,6 +181,7 @@ export interface FileRoutesById {
   '/_authenticated/reports/': typeof AuthenticatedReportsIndexRoute
   '/_authenticated/scan/': typeof AuthenticatedScanIndexRoute
   '/_authenticated/services/': typeof AuthenticatedServicesIndexRoute
+  '/_authenticated/staff/': typeof AuthenticatedStaffIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -175,6 +194,7 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/cards/'
+    | '/change-password/'
     | '/dashboard/'
     | '/desk/'
     | '/directory/'
@@ -182,6 +202,7 @@ export interface FileRouteTypes {
     | '/reports/'
     | '/scan/'
     | '/services/'
+    | '/staff/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -192,6 +213,7 @@ export interface FileRouteTypes {
     | '/503'
     | '/'
     | '/cards'
+    | '/change-password'
     | '/dashboard'
     | '/desk'
     | '/directory'
@@ -199,6 +221,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/scan'
     | '/services'
+    | '/staff'
   id:
     | '__root__'
     | '/_authenticated'
@@ -210,6 +233,7 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/'
     | '/_authenticated/cards/'
+    | '/_authenticated/change-password/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/desk/'
     | '/_authenticated/directory/'
@@ -217,6 +241,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reports/'
     | '/_authenticated/scan/'
     | '/_authenticated/services/'
+    | '/_authenticated/staff/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -287,6 +312,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/staff/': {
+      id: '/_authenticated/staff/'
+      path: '/staff'
+      fullPath: '/staff/'
+      preLoaderRoute: typeof AuthenticatedStaffIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/services/': {
       id: '/_authenticated/services/'
       path: '/services'
@@ -336,6 +368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/change-password/': {
+      id: '/_authenticated/change-password/'
+      path: '/change-password'
+      fullPath: '/change-password/'
+      preLoaderRoute: typeof AuthenticatedChangePasswordIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/cards/': {
       id: '/_authenticated/cards/'
       path: '/cards'
@@ -349,6 +388,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedCardsIndexRoute: typeof AuthenticatedCardsIndexRoute
+  AuthenticatedChangePasswordIndexRoute: typeof AuthenticatedChangePasswordIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDeskIndexRoute: typeof AuthenticatedDeskIndexRoute
   AuthenticatedDirectoryIndexRoute: typeof AuthenticatedDirectoryIndexRoute
@@ -356,11 +396,13 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedReportsIndexRoute: typeof AuthenticatedReportsIndexRoute
   AuthenticatedScanIndexRoute: typeof AuthenticatedScanIndexRoute
   AuthenticatedServicesIndexRoute: typeof AuthenticatedServicesIndexRoute
+  AuthenticatedStaffIndexRoute: typeof AuthenticatedStaffIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedCardsIndexRoute: AuthenticatedCardsIndexRoute,
+  AuthenticatedChangePasswordIndexRoute: AuthenticatedChangePasswordIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDeskIndexRoute: AuthenticatedDeskIndexRoute,
   AuthenticatedDirectoryIndexRoute: AuthenticatedDirectoryIndexRoute,
@@ -368,6 +410,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedReportsIndexRoute: AuthenticatedReportsIndexRoute,
   AuthenticatedScanIndexRoute: AuthenticatedScanIndexRoute,
   AuthenticatedServicesIndexRoute: AuthenticatedServicesIndexRoute,
+  AuthenticatedStaffIndexRoute: AuthenticatedStaffIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

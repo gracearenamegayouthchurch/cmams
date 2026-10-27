@@ -1,5 +1,5 @@
-import { useNavigate } from '@tanstack/react-router'
-import { LogOut } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { KeyRound, LogOut } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
 import { useOptionalSearch } from '@/context/search-provider'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,12 @@ export function ChurchPage({
         {search && <Search placeholder='Go to page…' />}
         <div className='ms-auto flex items-center gap-2'>
           <ThemeSwitch />
+          <Button type='button' variant='ghost' size='sm' asChild>
+            <Link to='/change-password' aria-label='Change password'>
+              <KeyRound className='size-4' />
+              <span className='hidden sm:inline'>Password</span>
+            </Link>
+          </Button>
           <Button
             type='button'
             variant='ghost'

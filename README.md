@@ -48,6 +48,16 @@ Single-church online Member and Attendance Management System for **Grace Arena M
    pnpm dev
    ```
 
+### Staff management upgrade
+
+**Before deploying the Staff page/API**, apply `supabase/migrations/002_staff_management.sql` to the approved church database:
+
+```bash
+pnpm migrate:staff -- --confirm-project=dyngikqhjxqprjhvrscz
+```
+
+The script refuses other database targets and existing/partial installations. This migration adds session-version and temporary-password-change fields without changing existing account passwords. On **Staff** (Admin only), create accounts with one of the five roles, manage access and reset passwords. The generated temporary password is displayed once: pass it to the intended staff member over a secure channel, not in chat, email, screenshots or logs. They must change it on first sign-in. Role/status/password changes invalidate existing sessions; the last active administrator cannot be disabled or demoted. All account mutations are audited. Staff can update their own password from the header.
+
 ## Verification & Scripts
 
 - `pnpm test:server` — Node unit and API boundary suite (auth, RBAC, CSRF/origin validation, phone masking, duplicate matching, card SHA-256 hashing and collision-safe issuance, atomic check-in outcomes, CSV formula escaping, and Vercel/Vite URL adapters).
