@@ -140,6 +140,9 @@ export function ScanPage() {
     const reader = new BrowserQRCodeReader(undefined, {
       delayBetweenScanAttempts: 100,
     })
+    const onScan = (result: { getText: () => string } | undefined) => {
+      if (!cancelled && result) void checkIn(result.getText())
+    }
     void reader
       .decodeFromConstraints(
         {
@@ -150,9 +153,10 @@ export function ScanPage() {
           },
         },
         videoElement,
-        (result) => {
-          if (!cancelled && result) void checkIn(result.getText())
-        }
+        onScan
+      )
+      .catch(() =>
+        reader.decodeFromVideoDevice(undefined, videoElement, onScan)
       )
       .then((value) => {
         if (cancelled) value.stop()
@@ -161,7 +165,7 @@ export function ScanPage() {
       .catch(() => {
         if (!cancelled) {
           setCameraError(
-            'Camera access is unavailable. Enter the 6-character card code below or use a USB scanner.'
+            'Camera access is unavailable. Allow camera permissions in your browser, or enter the 6-character card code below.'
           )
           setCameraOn(false)
         }

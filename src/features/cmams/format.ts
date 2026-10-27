@@ -54,10 +54,14 @@ export function formatCategory(category: string): string {
 }
 
 const methodLabels: Record<string, string> = {
+  QR_SCAN: 'QR scan',
+  SHORTCODE_ENTRY: 'Card code',
+  MANUAL_SEARCH: 'Desk check-in',
+  VISITOR_DESK_REGISTRATION: 'Desk registration',
   QR_CAMERA: 'QR scan',
   QR_SCANNER: 'Scanner',
   SHORT_CODE: 'Card code',
-  MANUAL_DESK: 'Desk',
+  MANUAL_DESK: 'Desk check-in',
 }
 
 export function formatCheckinMethod(method: string): string {
