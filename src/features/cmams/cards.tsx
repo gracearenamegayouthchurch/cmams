@@ -31,6 +31,7 @@ import { formatStage, stageBadgeClass } from './format'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { type IssuedCard, type Person } from './types'
+import { useDebouncedValue } from './use-debounced-value'
 
 type ActiveCard = {
   id: string
@@ -146,20 +147,22 @@ export function CardsPage() {
   const [revokeTarget, setRevokeTarget] = useState<ActiveCard | null>(null)
 
   const trimmedPersonSearch = personSearch.trim()
+  const debouncedPersonSearch = useDebouncedValue(trimmedPersonSearch)
+  const debouncedCardSearch = useDebouncedValue(search)
   const matchingPeople = useQuery({
-    queryKey: ['people', 'card-issue', trimmedPersonSearch],
+    queryKey: ['people', 'card-issue', debouncedPersonSearch],
     queryFn: () =>
       api<{ people: Person[] }>(
-        `/api/v1/people?q=${encodeURIComponent(trimmedPersonSearch)}`
+        `/api/v1/people?q=${encodeURIComponent(debouncedPersonSearch)}`
       ),
-    enabled: trimmedPersonSearch.length >= 2,
+    enabled: debouncedPersonSearch.length >= 2,
   })
 
   const cards = useQuery({
-    queryKey: ['cards', search],
+    queryKey: ['cards', debouncedCardSearch],
     queryFn: () =>
       api<{ cards: ActiveCard[] }>(
-        `/api/v1/cards?q=${encodeURIComponent(search)}`
+        `/api/v1/cards?q=${encodeURIComponent(debouncedCardSearch)}`
       ),
   })
 
@@ -241,14 +244,18 @@ export function CardsPage() {
             {trimmedPersonSearch.length >= 2 && (
               <div className='space-y-2'>
                 <QueryState
-                  loading={matchingPeople.isPending}
+                  loading={
+                    trimmedPersonSearch !== debouncedPersonSearch ||
+                    matchingPeople.isPending
+                  }
                   error={matchingPeople.error}
                   empty={matchingPeople.data?.people.length === 0}
                   emptyTitle='No matching profile'
                   emptyDescription='Check the spelling or register this person at the Registration desk first.'
                   onRetry={() => void matchingPeople.refetch()}
                 />
-                {matchingPeople.data &&
+                {trimmedPersonSearch === debouncedPersonSearch &&
+                  matchingPeople.data &&
                   matchingPeople.data.people.length > 0 && (
                     <div className='divide-y rounded-xl border'>
                       {matchingPeople.data.people.slice(0, 6).map((person) => (
@@ -301,7 +308,7 @@ export function CardsPage() {
                   Currently valid cards across members and visitors.
                 </CardDescription>
               </div>
-              {cards.data && (
+              {search === debouncedCardSearch && cards.data && (
                 <Badge variant='secondary'>
                   {cards.data.cards.length} active
                 </Badge>
@@ -328,7 +335,7 @@ export function CardsPage() {
           </CardHeader>
           <CardContent>
             <QueryState
-              loading={cards.isPending}
+              loading={search !== debouncedCardSearch || cards.isPending}
               error={cards.error}
               empty={cards.data?.cards.length === 0}
               emptyTitle={
@@ -341,69 +348,71 @@ export function CardsPage() {
               }
               onRetry={() => void cards.refetch()}
             />
-            {cards.data && cards.data.cards.length > 0 && (
-              <div className='divide-y rounded-xl border'>
-                {cards.data.cards.map((card) => (
-                  <div
-                    key={card.id}
-                    className='flex flex-wrap items-center justify-between gap-3 px-4 py-3.5'
-                  >
-                    <div className='space-y-1'>
-                      <p className='text-sm font-medium'>
-                        {card.first_name} {card.last_name}
-                      </p>
-                      <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
-                        <span className='font-mono'>{card.member_code}</span>
-                        <span>·</span>
-                        <span className='rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
-                          {card.short_code}
-                        </span>
-                        {card.issued_at && (
-                          <>
-                            <span>·</span>
-                            <span>
-                              Issued{' '}
-                              {new Date(card.issued_at).toLocaleDateString(
-                                undefined,
-                                {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                }
-                              )}
-                            </span>
-                          </>
-                        )}
+            {search === debouncedCardSearch &&
+              cards.data &&
+              cards.data.cards.length > 0 && (
+                <div className='divide-y rounded-xl border'>
+                  {cards.data.cards.map((card) => (
+                    <div
+                      key={card.id}
+                      className='flex flex-wrap items-center justify-between gap-3 px-4 py-3.5'
+                    >
+                      <div className='space-y-1'>
+                        <p className='text-sm font-medium'>
+                          {card.first_name} {card.last_name}
+                        </p>
+                        <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
+                          <span className='font-mono'>{card.member_code}</span>
+                          <span>·</span>
+                          <span className='rounded bg-muted px-1.5 py-0.5 font-mono text-foreground'>
+                            {card.short_code}
+                          </span>
+                          {card.issued_at && (
+                            <>
+                              <span>·</span>
+                              <span>
+                                Issued{' '}
+                                {new Date(card.issued_at).toLocaleDateString(
+                                  undefined,
+                                  {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  }
+                                )}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className='flex items-center gap-2'>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          disabled={issue.isPending}
+                          onClick={() => {
+                            setIssued(null)
+                            issue.mutate(card.person_id)
+                          }}
+                        >
+                          <RefreshCw className='size-3.5' />
+                          Replace
+                        </Button>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          className='text-destructive hover:bg-destructive/10 hover:text-destructive'
+                          disabled={revoke.isPending}
+                          onClick={() => setRevokeTarget(card)}
+                        >
+                          <ShieldX className='size-3.5' />
+                          Revoke
+                        </Button>
                       </div>
                     </div>
-                    <div className='flex items-center gap-2'>
-                      <Button
-                        variant='outline'
-                        size='sm'
-                        disabled={issue.isPending}
-                        onClick={() => {
-                          setIssued(null)
-                          issue.mutate(card.person_id)
-                        }}
-                      >
-                        <RefreshCw className='size-3.5' />
-                        Replace
-                      </Button>
-                      <Button
-                        variant='outline'
-                        size='sm'
-                        className='text-destructive hover:bg-destructive/10 hover:text-destructive'
-                        disabled={revoke.isPending}
-                        onClick={() => setRevokeTarget(card)}
-                      >
-                        <ShieldX className='size-3.5' />
-                        Revoke
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
           </CardContent>
         </Card>
       </div>

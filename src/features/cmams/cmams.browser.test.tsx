@@ -188,6 +188,54 @@ describe('CMAMS browser workflows', () => {
     await expect.element(screen.getByText(/Network unreachable/)).toBeVisible()
   })
 
+  it('accepts a hardware wedge shortcode, serializes scans, and retries failed sends immediately', async () => {
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    let rejectFirst: (reason: Error) => void = () => {}
+    let attempts = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).endsWith('/api/v1/services'))
+          return jsonResponse({
+            services: [{ id: serviceId, status: 'CHECKIN_OPEN' }],
+          })
+        attempts++
+        if (attempts === 1)
+          return new Promise<Response>((_resolve, reject) => {
+            rejectFirst = reject
+          })
+        return jsonResponse({
+          outcome: 'CHECKED_IN',
+          person: { full_name: 'Ada Okafor', member_code: 'CM-1001' },
+        })
+      })
+    )
+    const screen = await renderWithShell(<ScanPage />)
+    await expect.element(screen.getByText('Ready to scan')).toBeVisible()
+    await expect
+      .element(screen.getByRole('button', { name: 'Start camera' }))
+      .toBeEnabled()
+    vi.spyOn(performance, 'now').mockReturnValue(100)
+    const wedge = () => {
+      for (const key of '9K4-M7X')
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true })
+        )
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      )
+    }
+    wedge()
+    await expect.poll(() => attempts).toBe(1)
+    wedge()
+    expect(attempts).toBe(1)
+    rejectFirst(new Error('Network unreachable'))
+    await expect.element(screen.getByText('Not checked in')).toBeVisible()
+    wedge()
+    await expect.poll(() => attempts).toBe(2)
+    await expect.element(screen.getByText('Checked in')).toBeVisible()
+  })
+
   it('renders dashboard metrics and actionable access-denied states', async () => {
     const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
     vi.stubGlobal(
@@ -375,5 +423,118 @@ describe('CMAMS browser workflows', () => {
       .element(screen.getByText('Youth Sunday Celebration'))
       .toBeVisible()
     await expect.element(screen.getByText('QR scan')).toBeVisible()
+  })
+
+  it('shows the real attendance count rather than the limited history length', async () => {
+    const personId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/attendance'))
+          return jsonResponse({
+            person: {
+              id: personId,
+              member_code: 'CM-1001',
+              first_name: 'Ada',
+              last_name: 'Okafor',
+              attendance_count: 124,
+              lifecycle_stage: 'MEMBER',
+            },
+            history: [
+              {
+                id: 'att-1',
+                service_name: 'Sunday',
+                service_category: 'SUNDAY_SERVICE',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checked_in_at: '2026-10-25T08:12:00Z',
+                checkin_method: 'QR_SCAN',
+              },
+            ],
+          })
+        return jsonResponse({
+          people: [
+            {
+              id: personId,
+              member_code: 'CM-1001',
+              first_name: 'Ada',
+              last_name: 'Okafor',
+              lifecycle_stage: 'MEMBER',
+              attendance_count: 124,
+            },
+          ],
+          total: 1,
+          page: 1,
+          totalPages: 1,
+        })
+      })
+    )
+    const screen = await renderWithShell(<DirectoryPage />)
+    await userEvent.click(screen.getByRole('button', { name: /view history/i }))
+    await expect.element(screen.getByText('124', { exact: true })).toBeVisible()
+  })
+
+  it('sends one directory query for a burst of typing', async () => {
+    const requests: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        requests.push(String(input))
+        return jsonResponse({ people: [], total: 0, page: 1, totalPages: 1 })
+      })
+    )
+    const screen = await renderWithShell(<DirectoryPage />)
+    await expect.element(screen.getByLabelText(/search by name/i)).toBeVisible()
+    await userEvent.type(screen.getByLabelText(/search by name/i), 'Grace')
+    await expect
+      .poll(() => requests.filter((url) => url.includes('q=Grace')).length)
+      .toBe(1)
+    expect(
+      requests.filter(
+        (url) =>
+          /[?&]q=/.test(url) && !url.includes('q=&') && !url.includes('q=Grace')
+      ).length
+    ).toBe(0)
+  })
+
+  it('does not leave an old card recipient actionable while a new name is being entered', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/v1/people?q=Ada'))
+          return jsonResponse({
+            people: [
+              {
+                id: 'ada',
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                lifecycle_stage: 'MEMBER',
+              },
+            ],
+          })
+        if (url.includes('/api/v1/people?q=Bola'))
+          return jsonResponse({
+            people: [
+              {
+                id: 'bola',
+                member_code: 'CM-1002',
+                first_name: 'Bola',
+                last_name: 'Okafor',
+                lifecycle_stage: 'MEMBER',
+              },
+            ],
+          })
+        return jsonResponse({ people: [], cards: [] })
+      })
+    )
+    const screen = await renderWithShell(<CardsPage />)
+    const input = screen.getByLabelText('Find person')
+    await userEvent.type(input, 'Ada')
+    await expect.element(screen.getByText('Ada Okafor')).toBeVisible()
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Bola')
+    expect(screen.getByText('Ada Okafor').query()).toBeNull()
+    await expect.element(screen.getByText('Bola Okafor')).toBeVisible()
   })
 })

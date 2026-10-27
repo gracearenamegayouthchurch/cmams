@@ -361,7 +361,7 @@ describe('API boundary', () => {
             },
           ],
         }
-      if (sql.includes('FROM attendance_records a'))
+      if (sql.includes('JOIN services s'))
         return {
           rows: [
             {
@@ -416,7 +416,7 @@ describe('API boundary', () => {
     )
     expect(histRes.status).toBe(200)
     expect(await histRes.json()).toMatchObject({
-      person: { member_code: 'CM-1001', phone: '+2348031234592' },
+      person: { member_code: 'CM-1001', phone: '+234803*****92' },
       history: [
         { service_name: 'Sunday Service', checkin_method: 'QR_CAMERA' },
       ],

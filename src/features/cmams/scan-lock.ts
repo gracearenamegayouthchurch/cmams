@@ -9,5 +9,8 @@ export function createScanLock() {
         for (const [key, time] of seen) if (now - time > 3000) seen.delete(key)
       return true
     },
+    release(value: string): void {
+      seen.delete(value)
+    },
   }
 }

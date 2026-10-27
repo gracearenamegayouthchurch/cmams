@@ -44,6 +44,7 @@ import {
   type Person,
   type PersonAttendanceRecord,
 } from './types'
+import { useDebouncedValue } from './use-debounced-value'
 
 const stageFilters = [
   { value: '', label: 'All' },
@@ -57,15 +58,16 @@ const pageSize = 15
 
 export function DirectoryPage() {
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search)
   const [stage, setStage] = useState('')
   const [page, setPage] = useState(1)
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null)
 
   const directory = useQuery({
-    queryKey: ['people', search, stage, page],
+    queryKey: ['people', debouncedSearch, stage, page],
     queryFn: () =>
       api<PaginatedPeople>(
-        `/api/v1/people?q=${encodeURIComponent(search)}&stage=${encodeURIComponent(stage)}&page=${page}&pageSize=${pageSize}`
+        `/api/v1/people?q=${encodeURIComponent(debouncedSearch)}&stage=${encodeURIComponent(stage)}&page=${page}&pageSize=${pageSize}`
       ),
   })
 
@@ -155,7 +157,7 @@ export function DirectoryPage() {
         </div>
 
         <QueryState
-          loading={directory.isPending}
+          loading={search !== debouncedSearch || directory.isPending}
           error={directory.error}
           empty={people.length === 0}
           emptyTitle={
@@ -171,7 +173,7 @@ export function DirectoryPage() {
           onRetry={() => void directory.refetch()}
         />
 
-        {directory.data && people.length > 0 && (
+        {search === debouncedSearch && directory.data && people.length > 0 && (
           <Card className='overflow-hidden py-0'>
             <Table>
               <TableHeader>
@@ -340,9 +342,7 @@ export function DirectoryPage() {
                       Services attended
                     </p>
                     <p className='mt-1 text-2xl font-semibold tabular-nums'>
-                      {attendanceDetail.data
-                        ? history.length
-                        : (detailPerson.attendance_count ?? '—')}
+                      {detailPerson.attendance_count ?? '—'}
                     </p>
                   </div>
                   <div className='rounded-xl border bg-muted/30 p-3'>

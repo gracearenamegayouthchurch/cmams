@@ -97,7 +97,7 @@ export type PeopleListOptions = {
 
 export async function listPeoplePaginated(
   db: Db,
-  role: StaffRole,
+  _role: StaffRole,
   search: string,
   options: PeopleListOptions = {}
 ) {
@@ -133,13 +133,15 @@ export async function listPeoplePaginated(
     [search.slice(0, 80), validStage, pageSize, offset]
   )
 
-  const total =
-    result.rows.length > 0
-      ? Number(
-          (result.rows[0] as { total_count?: number }).total_count ??
-            result.rows.length
-        )
-      : 0
+  const total = result.rows.length > 0
+    ? Number((result.rows[0] as { total_count: number }).total_count)
+    : Number((await db.query(
+        `SELECT count(*)::int AS total_count FROM people p
+         WHERE p.deleted_at IS NULL
+           AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%')
+           AND ($2 = '' OR p.lifecycle_stage::text = $2)`,
+        [search.slice(0, 80), validStage]
+      )).rows[0].total_count)
   const people = result.rows.map(
     ({
       phone_e164,
@@ -147,10 +149,7 @@ export async function listPeoplePaginated(
       ...row
     }: Record<string, unknown> & { phone_e164: string | null }) => ({
       ...row,
-      phone:
-        role === 'ADMIN' || role === 'PASTOR_VIEWER'
-          ? phone_e164
-          : maskPhone(phone_e164),
+      phone: maskPhone(phone_e164),
     })
   )
 
@@ -173,12 +172,13 @@ export async function listPeople(db: Db, role: StaffRole, search: string) {
 
 export async function getPersonAttendanceHistory(
   db: Db,
-  role: StaffRole,
+  _role: StaffRole,
   personId: string
 ) {
   const personResult = await db.query(
-    `SELECT id,member_code,first_name,last_name,phone_e164,lifecycle_stage,registered_at
-    FROM people WHERE id=$1 AND deleted_at IS NULL`,
+    `SELECT p.id,p.member_code,p.first_name,p.last_name,p.phone_e164,p.lifecycle_stage,p.registered_at,
+      (SELECT count(*)::int FROM attendance_records a WHERE a.person_id=p.id) AS attendance_count
+    FROM people p WHERE p.id=$1 AND p.deleted_at IS NULL`,
     [personId]
   )
   const row = personResult.rows[0] as
@@ -188,6 +188,7 @@ export async function getPersonAttendanceHistory(
         first_name: string
         last_name: string
         phone_e164: string | null
+        attendance_count: number
         lifecycle_stage: string
         registered_at: string
       }
@@ -209,10 +210,7 @@ export async function getPersonAttendanceHistory(
   return {
     person: {
       ...rest,
-      phone:
-        role === 'ADMIN' || role === 'PASTOR_VIEWER'
-          ? phone_e164
-          : maskPhone(phone_e164),
+      phone: maskPhone(phone_e164),
     },
     history: historyResult.rows,
   }

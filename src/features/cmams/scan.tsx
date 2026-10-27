@@ -64,6 +64,7 @@ export function ScanPage() {
   const [status, setStatus] = useState<Outcome | null>(null)
   const [recent, setRecent] = useState<RecentScan[]>([])
   const [busy, setBusy] = useState(false)
+  const inFlight = useRef(false)
   const video = useRef<HTMLVideoElement>(null)
   const cooldown = useRef(createScanLock())
   const wedge = useRef({ text: '', last: 0 })
@@ -74,7 +75,9 @@ export function ScanPage() {
 
   const checkIn = useCallback(
     async (credential: string) => {
-      if (!activeId || !cooldown.current.accept(credential)) return
+      if (!activeId || inFlight.current || !cooldown.current.accept(credential))
+        return
+      inFlight.current = true
       setBusy(true)
       setStatus(null)
       const stamp = new Date().toLocaleTimeString([], {
@@ -106,6 +109,7 @@ export function ScanPage() {
         )
         signal(response.outcome)
       } catch (error) {
+        cooldown.current.release(credential)
         const failure: Outcome = {
           outcome: 'NETWORK_ERROR',
           message:
@@ -126,6 +130,7 @@ export function ScanPage() {
           ].slice(0, 5)
         )
       } finally {
+        inFlight.current = false
         setBusy(false)
       }
     },
@@ -190,13 +195,19 @@ export function ScanPage() {
         return
       const now = performance.now()
       if (event.key === 'Enter') {
-        if (wedge.current.text.length >= 10) void checkIn(wedge.current.text)
+        if (
+          /^(?:[0-9A-Z]{3}-?[0-9A-Z]{3}|cma:\/\/v1\/[a-zA-Z0-9_-]{22})$/.test(
+            wedge.current.text
+          )
+        )
+          void checkIn(wedge.current.text)
         wedge.current.text = ''
         return
       }
       if (event.key.length !== 1) return
       if (now - wedge.current.last > 40) wedge.current.text = ''
       wedge.current.text += event.key
+      if (wedge.current.text.length > 200) wedge.current.text = ''
       wedge.current.last = now
     }
     window.addEventListener('keydown', onKey)
