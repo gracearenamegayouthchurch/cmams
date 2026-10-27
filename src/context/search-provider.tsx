@@ -10,9 +10,13 @@ const SearchContext = createContext<SearchContextType | null>(null)
 
 type SearchProviderProps = {
   children: React.ReactNode
+  allowedItems?: string[]
 }
 
-export function SearchProvider({ children }: SearchProviderProps) {
+export function SearchProvider({
+  children,
+  allowedItems,
+}: SearchProviderProps) {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -29,7 +33,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
   return (
     <SearchContext value={{ open, setOpen }}>
       {children}
-      <CommandMenu />
+      <CommandMenu allowedItems={allowedItems} />
     </SearchContext>
   )
 }
@@ -44,3 +48,6 @@ export const useSearch = () => {
 
   return searchContext
 }
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const useOptionalSearch = () => useContext(SearchContext)

@@ -14,20 +14,25 @@ export function GeneralError({
   const { history } = useRouter()
   return (
     <div className={cn('h-svh w-full', className)}>
-      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
+      <div className='m-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-2 px-4 text-center'>
         {!minimal && (
-          <h1 className='text-[7rem] leading-tight font-bold'>500</h1>
+          <p className='text-sm font-semibold tracking-widest text-sky-600 uppercase dark:text-sky-400'>
+            Error 500
+          </p>
         )}
-        <span className='font-medium'>Oops! Something went wrong {`:')`}</span>
-        <p className='text-center text-muted-foreground'>
-          We apologize for the inconvenience. <br /> Please try again later.
+        <h1 className='text-2xl font-semibold tracking-tight'>
+          Something went wrong
+        </h1>
+        <p className='text-sm text-muted-foreground'>
+          An unexpected error occurred. Refresh the page or try again in a
+          moment.
         </p>
         {!minimal && (
-          <div className='mt-6 flex gap-4'>
+          <div className='mt-5 flex gap-3'>
             <Button variant='outline' onClick={() => history.go(-1)}>
-              Go Back
+              Go back
             </Button>
-            <Button onClick={() => navigate({ to: '/' })}>Back to Home</Button>
+            <Button onClick={() => navigate({ to: '/' })}>Go to home</Button>
           </div>
         )}
       </div>

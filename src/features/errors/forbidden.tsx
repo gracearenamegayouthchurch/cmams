@@ -6,18 +6,21 @@ export function ForbiddenError() {
   const { history } = useRouter()
   return (
     <div className='h-svh'>
-      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
-        <h1 className='text-[7rem] leading-tight font-bold'>403</h1>
-        <span className='font-medium'>Access Forbidden</span>
-        <p className='text-center text-muted-foreground'>
-          You don't have necessary permission <br />
-          to view this resource.
+      <div className='m-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-2 px-4 text-center'>
+        <p className='text-sm font-semibold tracking-widest text-amber-600 uppercase dark:text-amber-400'>
+          Error 403
         </p>
-        <div className='mt-6 flex gap-4'>
+        <h1 className='text-2xl font-semibold tracking-tight'>
+          Access restricted
+        </h1>
+        <p className='text-sm text-muted-foreground'>
+          Your staff account does not have permission to open this page.
+        </p>
+        <div className='mt-5 flex gap-3'>
           <Button variant='outline' onClick={() => history.go(-1)}>
-            Go Back
+            Go back
           </Button>
-          <Button onClick={() => navigate({ to: '/' })}>Back to Home</Button>
+          <Button onClick={() => navigate({ to: '/' })}>Go to home</Button>
         </div>
       </div>
     </div>

@@ -1,8 +1,16 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -26,119 +34,153 @@ type Absentee = {
 }
 
 export function ReportsPage() {
-  const [serviceId, setServiceId] = useState('')
+  const [selectedServiceId, setSelectedServiceId] = useState('')
   const services = useQuery({
     queryKey: ['services'],
     queryFn: () => api<{ services: Service[] }>('/api/v1/services'),
   })
+  const serviceId = selectedServiceId || services.data?.services[0]?.id || ''
+
   const absentees = useQuery({
     queryKey: ['absentees', 3],
     queryFn: () => api<{ people: Absentee[] }>('/api/v1/reports/absentees'),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   })
+
   return (
     <ChurchPage
       title='Reports'
-      description='Review attendance and follow up with members who missed three closed Sunday services.'
+      description='Download service attendance records and pastoral follow-up lists.'
     >
-      <div className='space-y-8'>
+      <div className='max-w-5xl space-y-6'>
         <Card>
           <CardHeader>
-            <CardTitle>Attendance export</CardTitle>
+            <CardTitle>Service attendance</CardTitle>
+            <CardDescription>
+              Export a CSV of everyone checked in for a selected service.
+            </CardDescription>
           </CardHeader>
           <CardContent className='space-y-4'>
             <QueryState
               loading={services.isPending}
               error={services.error}
+              empty={services.data?.services.length === 0}
+              emptyTitle='No services yet'
+              emptyDescription='Attendance exports become available once a service has been scheduled.'
               onRetry={() => void services.refetch()}
             />
-            {services.data && (
-              <ServicePicker
-                services={services.data.services}
-                value={serviceId}
-                onChange={setServiceId}
-              />
+            {services.data && services.data.services.length > 0 && (
+              <div className='flex flex-wrap items-end gap-3'>
+                <ServicePicker
+                  services={services.data.services}
+                  value={serviceId}
+                  onChange={setSelectedServiceId}
+                />
+                <Button asChild={!!serviceId} disabled={!serviceId}>
+                  {serviceId ? (
+                    <a
+                      href={`/api/v1/reports/attendance.csv?serviceId=${encodeURIComponent(serviceId)}`}
+                      download
+                    >
+                      <Download className='size-4' />
+                      Download attendance CSV
+                    </a>
+                  ) : (
+                    'Select a service'
+                  )}
+                </Button>
+              </div>
             )}
-            <Button
-              asChild={!!serviceId}
-              disabled={!serviceId}
-              variant='outline'
-            >
-              {serviceId ? (
-                <a
-                  href={`/api/v1/reports/attendance.csv?serviceId=${encodeURIComponent(serviceId)}`}
-                  download
-                >
-                  Download attendance CSV
-                </a>
-              ) : (
-                'Select a service first'
-              )}
-            </Button>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
-            <CardTitle>Pastoral care · three Sundays</CardTitle>
-          </CardHeader>
-          <CardContent className='space-y-4'>
-            <p className='text-sm text-muted-foreground'>
-              Only people registered before the oldest of the three services
-              appear here. Viewing or exporting contact details is audited.
-            </p>
-            <QueryState
-              loading={absentees.isPending}
-              error={absentees.error}
-              onRetry={() => void absentees.refetch()}
-            />
-            {absentees.data && (
-              <>
-                <p className='text-sm font-medium'>
-                  {absentees.data.people.length} people to follow up
-                </p>
-                <Button variant='outline' asChild>
+            <div className='flex flex-wrap items-start justify-between gap-3'>
+              <div>
+                <div className='flex items-center gap-2.5'>
+                  <CardTitle>Missed last 3 Sundays</CardTitle>
+                  {absentees.data && (
+                    <Badge variant='secondary' className='tabular-nums'>
+                      {absentees.data.people.length} for follow-up
+                    </Badge>
+                  )}
+                </div>
+                <CardDescription className='mt-1'>
+                  Members and regular attendees absent from the last three
+                  closed Sunday services.
+                </CardDescription>
+              </div>
+              {absentees.data && absentees.data.people.length > 0 && (
+                <Button variant='outline' size='sm' asChild>
                   <a href='/api/v1/reports/absentees.csv' download>
+                    <Download className='size-4' />
                     Download follow-up CSV
                   </a>
                 </Button>
-                {absentees.data.people.length > 0 && (
-                  <div className='overflow-x-auto rounded-lg border'>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Member code</TableHead>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Contact</TableHead>
-                          <TableHead>Last attended</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {absentees.data.people.map((person) => (
-                          <TableRow key={person.id}>
-                            <TableCell className='font-mono text-xs'>
-                              {person.member_code}
-                            </TableCell>
-                            <TableCell>
-                              {person.first_name} {person.last_name}
-                            </TableCell>
-                            <TableCell>
-                              {person.phone_e164 || 'Not provided'}
-                            </TableCell>
-                            <TableCell>
-                              {person.last_attended_at
-                                ? new Date(
-                                    person.last_attended_at
-                                  ).toLocaleDateString()
-                                : 'Never'}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className='space-y-4'>
+            <QueryState
+              loading={absentees.isPending}
+              error={absentees.error}
+              empty={absentees.data?.people.length === 0}
+              emptyTitle='No absentees to follow up'
+              emptyDescription='Appears when members registered before the last three closed Sunday services miss all three.'
+              onRetry={() => void absentees.refetch()}
+            />
+            {absentees.data && absentees.data.people.length > 0 && (
+              <div className='overflow-x-auto rounded-xl border'>
+                <Table>
+                  <TableHeader>
+                    <TableRow className='bg-muted/40'>
+                      <TableHead className='w-32'>Code</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead className='text-right'>
+                        Last attended
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {absentees.data.people.map((person) => (
+                      <TableRow key={person.id}>
+                        <TableCell className='font-mono text-xs font-medium text-muted-foreground'>
+                          {person.member_code}
+                        </TableCell>
+                        <TableCell className='font-medium'>
+                          {person.first_name} {person.last_name}
+                        </TableCell>
+                        <TableCell className='tabular-nums'>
+                          {person.phone_e164 ? (
+                            <a
+                              href={`tel:${person.phone_e164}`}
+                              className='text-sky-700 hover:underline dark:text-sky-300'
+                            >
+                              {person.phone_e164}
+                            </a>
+                          ) : (
+                            <span className='text-muted-foreground'>—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className='text-right text-muted-foreground tabular-nums'>
+                          {person.last_attended_at
+                            ? new Date(
+                                person.last_attended_at
+                              ).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })
+                            : 'No prior check-in'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ScanLine } from 'lucide-react'
+import { AlertCircle, ScanLine } from 'lucide-react'
 import { api, type Staff } from '@/lib/cmams-api'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/password-input'
+import { ThemeSwitch } from '@/components/theme-switch'
 import { homeForRole } from './access'
 
 export function LoginPage() {
@@ -35,7 +37,7 @@ export function LoginPage() {
       setError(
         reason instanceof Error
           ? reason.message
-          : 'Could not sign in. Try again.'
+          : 'Could not sign in. Please try again.'
       )
     } finally {
       setBusy(false)
@@ -43,54 +45,89 @@ export function LoginPage() {
   }
 
   return (
-    <main className='flex min-h-dvh items-center justify-center bg-muted/50 px-4 py-10'>
-      <Card className='w-full max-w-md shadow-sm'>
-        <CardHeader className='space-y-4'>
-          <div className='flex size-12 items-center justify-center rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300'>
-            <ScanLine aria-hidden='true' />
+    <main className='relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-slate-950 px-4 py-12'>
+      <img
+        src='/images/church-bg.jpg'
+        alt=''
+        aria-hidden='true'
+        className='pointer-events-none absolute inset-0 size-full scale-105 object-cover object-center blur-[5px]'
+      />
+      <div
+        aria-hidden='true'
+        className='pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/65 via-slate-950/60 to-slate-950/80'
+      />
+      <div className='absolute top-4 right-4 z-20 rounded-full bg-background/85 p-0.5 shadow-sm backdrop-blur-md'>
+        <ThemeSwitch />
+      </div>
+
+      <div className='relative z-10 w-full max-w-[400px] space-y-6'>
+        <div className='flex flex-col items-center text-center'>
+          <div className='flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 text-white shadow-lg ring-1 ring-white/25'>
+            <ScanLine className='size-6' aria-hidden='true' />
           </div>
-          <div>
-            <CardTitle className='text-2xl'>Welcome back</CardTitle>
-            <CardDescription className='mt-2'>
-              Grace Arena · Member & attendance management
+          <p className='mt-3.5 text-xs font-semibold tracking-widest text-sky-300 uppercase drop-shadow-xs'>
+            Grace Arena Mega Youth Church
+          </p>
+        </div>
+
+        <Card className='border-white/15 bg-card/95 shadow-2xl backdrop-blur-md'>
+          <CardHeader className='space-y-1 pb-4 text-center'>
+            <CardTitle className='text-xl font-semibold tracking-tight'>
+              Staff sign in
+            </CardTitle>
+            <CardDescription>
+              Use your staff email and password to continue.
             </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className='space-y-5'>
-            <div className='space-y-2'>
-              <Label htmlFor='email'>Staff email</Label>
-              <Input
-                id='email'
-                type='email'
-                required
-                autoComplete='username'
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='password'>Password</Label>
-              <Input
-                id='password'
-                type='password'
-                required
-                autoComplete='current-password'
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </div>
-            {error && (
-              <p role='alert' className='text-sm text-destructive'>
-                {error}
-              </p>
-            )}
-            <Button type='submit' className='w-full' disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={submit} className='space-y-4'>
+              <div className='space-y-1.5'>
+                <Label htmlFor='email'>Staff email</Label>
+                <Input
+                  id='email'
+                  type='email'
+                  required
+                  placeholder='name@gracearena.org'
+                  autoComplete='username'
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </div>
+              <div className='space-y-1.5'>
+                <Label htmlFor='password'>Password</Label>
+                <PasswordInput
+                  id='password'
+                  required
+                  placeholder='Enter your password'
+                  autoComplete='current-password'
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </div>
+              {error && (
+                <div
+                  role='alert'
+                  className='flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive'
+                >
+                  <AlertCircle
+                    className='mt-0.5 size-4 shrink-0'
+                    aria-hidden='true'
+                  />
+                  <span>{error}</span>
+                </div>
+              )}
+              <Button type='submit' className='w-full' disabled={busy}>
+                {busy ? 'Signing in…' : 'Sign in'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <p className='text-center text-xs text-slate-200/90 drop-shadow-xs'>
+          Authorized church staff only. Need an account? Contact your service
+          administrator.
+        </p>
+      </div>
     </main>
   )
 }

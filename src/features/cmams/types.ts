@@ -8,6 +8,7 @@ export type Service = {
   checkin_closes_at: string
   locked_eligible_member_count: number | null
 }
+
 export type Person = {
   id: string
   member_code: string
@@ -15,14 +16,38 @@ export type Person = {
   last_name: string
   phone: string | null
   lifecycle_stage: string
+  registered_at?: string
+  attendance_count?: number
+  last_attended_at?: string | null
   household_id?: string
   score?: number
   shared_phone?: boolean
 }
+
+export type PaginatedPeople = {
+  people: Person[]
+  total?: number
+  page?: number
+  pageSize?: number
+  totalPages?: number
+}
+
+export type PersonAttendanceRecord = {
+  id: string
+  service_id: string
+  service_name: string
+  service_category: string
+  scheduled_start_at: string
+  checked_in_at: string
+  checkin_method: string
+  snapshot_stage: string
+}
+
 export type Summary = {
   id: string
   name: string
   status: string
+  scheduled_start_at?: string
   total: number
   members: number
   first_timers: number
@@ -30,6 +55,7 @@ export type Summary = {
   eligible: number
   turnoutPercent: number
 }
+
 export type IssuedCard = {
   memberCode: string
   shortCode: string

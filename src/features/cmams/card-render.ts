@@ -3,7 +3,7 @@ import { type IssuedCard } from './types'
 
 const cardWidth = 720
 const cardHeight = 920
-const qrSize = 550
+const qrSize = 510
 const pdfWidth = 288
 const pdfHeight = 368
 
@@ -16,14 +16,28 @@ async function renderCardCanvas(card: IssuedCard) {
 
   context.fillStyle = '#ffffff'
   context.fillRect(0, 0, cardWidth, cardHeight)
-  context.fillStyle = '#0c243a'
-  context.fillRect(0, 0, cardWidth, 120)
-  context.fillStyle = '#ffffff'
-  context.textAlign = 'left'
-  context.textBaseline = 'alphabetic'
-  context.font = 'bold 31px Arial, sans-serif'
-  context.fillText('GRACE ARENA', 45, 74)
 
+  // Deep navy header with sky-blue accent bar
+  context.fillStyle = '#0c243a'
+  context.fillRect(0, 0, cardWidth, 136)
+  context.fillStyle = '#0ea5e9'
+  context.fillRect(0, 136, cardWidth, 6)
+
+  context.textBaseline = 'alphabetic'
+  context.textAlign = 'left'
+  context.fillStyle = '#ffffff'
+  context.font = 'bold 30px Inter, Arial, sans-serif'
+  context.fillText('GRACE ARENA', 48, 68)
+  context.fillStyle = '#7dd3fc'
+  context.font = '600 15px Inter, Arial, sans-serif'
+  context.fillText('MEGA YOUTH CHURCH', 48, 98)
+
+  context.textAlign = 'right'
+  context.fillStyle = '#bae6fd'
+  context.font = '600 13px Inter, Arial, sans-serif'
+  context.fillText('CHECK-IN CARD', cardWidth - 48, 68)
+
+  // Framed QR container
   const qrCanvas = document.createElement('canvas')
   await QRCode.toCanvas(qrCanvas, card.credential, {
     errorCorrectionLevel: 'H',
@@ -31,17 +45,32 @@ async function renderCardCanvas(card: IssuedCard) {
     width: qrSize,
     color: { dark: '#0c243a', light: '#ffffff' },
   })
-  context.drawImage(qrCanvas, 85, 165)
+  const qrX = (cardWidth - qrSize) / 2
+  const qrY = 182
+  context.strokeStyle = '#e2e8f0'
+  context.lineWidth = 2
+  context.strokeRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24)
+  context.drawImage(qrCanvas, qrX, qrY)
 
+  // Member code & fallback shortcode
   context.textAlign = 'center'
   context.fillStyle = '#0c243a'
-  context.font = 'bold 42px Arial, sans-serif'
-  context.fillText(card.memberCode, cardWidth / 2, 770)
-  context.font = '34px Arial, sans-serif'
-  context.fillText(card.shortCode, cardWidth / 2, 830)
-  context.fillStyle = '#485f70'
-  context.font = '18px Arial, sans-serif'
-  context.fillText('Present this card at check-in', cardWidth / 2, 878)
+  context.font = 'bold 42px Inter, Arial, sans-serif'
+  context.fillText(card.memberCode, cardWidth / 2, 760)
+
+  context.fillStyle = '#0369a1'
+  context.font = 'bold 28px "Courier New", monospace'
+  context.fillText(card.shortCode, cardWidth / 2, 810)
+
+  context.fillStyle = '#64748b'
+  context.font = '18px Inter, Arial, sans-serif'
+  context.fillText('Present this card at service check-in', cardWidth / 2, 866)
+
+  // Crisp cut border for printed sheets
+  context.strokeStyle = '#cbd5e1'
+  context.lineWidth = 2
+  context.strokeRect(1, 1, cardWidth - 2, cardHeight - 2)
+
   return canvas
 }
 

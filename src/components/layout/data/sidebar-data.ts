@@ -1,25 +1,25 @@
 import {
+  CalendarDays,
   ChartNoAxesCombined,
   CreditCard,
   LayoutDashboard,
   ScanLine,
-  Users,
   UserRoundPlus,
-  CalendarDays,
+  Users,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
 export const sidebarData: SidebarData = {
-  user: { name: 'Church staff', email: 'Grace Arena', avatar: '' },
-  teams: [{ name: 'Grace Arena', logo: ScanLine, plan: 'Member & attendance' }],
+  user: { name: 'Grace Arena Staff', email: 'Grace Arena', avatar: '' },
+  teams: [{ name: 'Grace Arena', logo: ScanLine, plan: 'Mega Youth Church' }],
   navGroups: [
     {
-      title: 'Church operations',
+      title: 'Navigation',
       items: [
         { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
         { title: 'Scan', url: '/scan', icon: ScanLine },
         { title: 'Registration', url: '/desk', icon: UserRoundPlus },
-        { title: 'Directory', url: '/directory', icon: Users },
+        { title: 'Members', url: '/members', icon: Users },
         { title: 'Services', url: '/services', icon: CalendarDays },
         { title: 'Cards', url: '/cards', icon: CreditCard },
         { title: 'Reports', url: '/reports', icon: ChartNoAxesCombined },

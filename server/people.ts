@@ -3,58 +3,217 @@ import type pg from 'pg'
 import { maskPhone, type StaffRole } from './rbac.js'
 
 export class DuplicatePersonError extends Error {
-  constructor(readonly matches: unknown[]) { super('Possible duplicate. Review existing profiles before registering.') }
+  constructor(readonly matches: unknown[]) {
+    super('Possible duplicate. Review existing profiles before registering.')
+  }
 }
 
 const registration = z.object({
-  firstName: z.string().trim().min(1).max(100), lastName: z.string().trim().min(1).max(100),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
   middleName: z.string().trim().max(100).optional(),
-  phone: z.union([z.string().regex(/^\+[1-9]\d{7,14}$/), z.null()]).optional(),
-  householdId: z.uuid().optional(), consent: z.literal(true), confirmDistinct: z.boolean().optional(),
+  phone: z
+    .union([z.string().regex(/^\+[1-9]\d{7,14}$/), z.null()])
+    .optional(),
+  householdId: z.uuid().optional(),
+  consent: z.literal(true),
+  confirmDistinct: z.boolean().optional(),
 })
 export type Registration = z.infer<typeof registration>
 export function validateRegistration(input: unknown) {
   const data = registration.parse(input)
   return { ...data, phone: data.phone ?? null }
 }
-export function reversedName(fullName: string) { return fullName.trim().split(/\s+/).reverse().join(' ') }
+export function reversedName(fullName: string) {
+  return fullName.trim().split(/\s+/).reverse().join(' ')
+}
 
 type Db = Pick<pg.Pool, 'query' | 'connect'>
 
-export async function findDuplicates(db: Db, fullName: string, phone: string | null) {
+export async function findDuplicates(
+  db: Db,
+  fullName: string,
+  phone: string | null
+) {
   const name = fullName.trim().toLowerCase()
-  const result = await db.query(`SELECT id,member_code,first_name,last_name,household_id,
+  const result = await db.query(
+    `SELECT id,member_code,first_name,last_name,household_id,
       greatest(similarity(full_name_normalized,$1),similarity(full_name_normalized,$2)) AS score,
       (phone_e164=$3 AND $3 IS NOT NULL) AS shared_phone
     FROM people WHERE deleted_at IS NULL AND (
       phone_e164=$3 AND $3 IS NOT NULL OR
       similarity(full_name_normalized,$1)>0.5 OR similarity(full_name_normalized,$2)>0.5)
-    ORDER BY (phone_e164=$3 AND $3 IS NOT NULL) DESC, score DESC LIMIT 5`, [name, reversedName(name), phone])
+    ORDER BY (phone_e164=$3 AND $3 IS NOT NULL) DESC, score DESC LIMIT 5`,
+    [name, reversedName(name), phone]
+  )
   return result.rows
 }
 
 export async function registerPerson(db: Db, input: unknown, staffId: string) {
   const data = validateRegistration(input)
-  const matches = await findDuplicates(db, `${data.firstName} ${data.lastName}`, data.phone)
-  if (matches.length && !data.confirmDistinct) throw new DuplicatePersonError(matches)
+  const matches = await findDuplicates(
+    db,
+    `${data.firstName} ${data.lastName}`,
+    data.phone
+  )
+  if (matches.length && !data.confirmDistinct)
+    throw new DuplicatePersonError(matches)
   const client = await db.connect()
   try {
     await client.query('BEGIN')
-    const created = await client.query(`INSERT INTO people(first_name,middle_name,last_name,phone_e164,household_id,privacy_consent_at,registered_by_staff_id)
+    const created = await client.query(
+      `INSERT INTO people(first_name,middle_name,last_name,phone_e164,household_id,privacy_consent_at,registered_by_staff_id)
       VALUES($1,$2,$3,$4,$5,now(),$6) RETURNING id,member_code,first_name,last_name,lifecycle_stage`,
-    [data.firstName, data.middleName ?? null, data.lastName, data.phone, data.householdId ?? null, staffId])
+      [
+        data.firstName,
+        data.middleName ?? null,
+        data.lastName,
+        data.phone,
+        data.householdId ?? null,
+        staffId,
+      ]
+    )
     const person = created.rows[0]
-    await client.query(`INSERT INTO person_stage_history(person_id,new_stage,changed_by_staff_id,reason)
-      VALUES($1,'FIRST_TIMER',$2,'Registered at front desk')`, [person.id, staffId])
+    await client.query(
+      `INSERT INTO person_stage_history(person_id,new_stage,changed_by_staff_id,reason)
+      VALUES($1,'FIRST_TIMER',$2,'Registered at front desk')`,
+      [person.id, staffId]
+    )
     await client.query('COMMIT')
     return person
-  } catch (error) { await client.query('ROLLBACK'); throw error }
-  finally { client.release() }
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+export type PeopleListOptions = {
+  stage?: string
+  page?: number
+  pageSize?: number
+}
+
+export async function listPeoplePaginated(
+  db: Db,
+  role: StaffRole,
+  search: string,
+  options: PeopleListOptions = {}
+) {
+  const page = Math.max(1, Math.min(1000, Math.trunc(options.page ?? 1)))
+  const pageSize = Math.max(
+    1,
+    Math.min(100, Math.trunc(options.pageSize ?? 20))
+  )
+  const stage = (options.stage ?? '').trim().toUpperCase()
+  const validStage = [
+    'FIRST_TIMER',
+    'RETURNING_VISITOR',
+    'REGULAR_ATTENDEE',
+    'MEMBER',
+    'INACTIVE',
+    'ARCHIVED',
+  ].includes(stage)
+    ? stage
+    : ''
+  const offset = (page - 1) * pageSize
+
+  const result = await db.query(
+    `SELECT p.id,p.member_code,p.first_name,p.last_name,p.phone_e164,p.lifecycle_stage,p.registered_at,
+      (SELECT count(*)::int FROM attendance_records a WHERE a.person_id=p.id) AS attendance_count,
+      (SELECT max(a.checked_in_at) FROM attendance_records a WHERE a.person_id=p.id) AS last_attended_at,
+      count(*) OVER()::int AS total_count
+    FROM people p
+    WHERE p.deleted_at IS NULL
+      AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%')
+      AND ($2 = '' OR p.lifecycle_stage::text = $2)
+    ORDER BY p.registered_at DESC
+    LIMIT $3 OFFSET $4`,
+    [search.slice(0, 80), validStage, pageSize, offset]
+  )
+
+  const total =
+    result.rows.length > 0
+      ? Number(
+          (result.rows[0] as { total_count?: number }).total_count ??
+            result.rows.length
+        )
+      : 0
+  const people = result.rows.map(
+    ({
+      phone_e164,
+      total_count: _total,
+      ...row
+    }: Record<string, unknown> & { phone_e164: string | null }) => ({
+      ...row,
+      phone:
+        role === 'ADMIN' || role === 'PASTOR_VIEWER'
+          ? phone_e164
+          : maskPhone(phone_e164),
+    })
+  )
+
+  return {
+    people,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  }
 }
 
 export async function listPeople(db: Db, role: StaffRole, search: string) {
-  const result = await db.query(`SELECT id,member_code,first_name,last_name,phone_e164,lifecycle_stage,registered_at
-    FROM people WHERE deleted_at IS NULL AND ($1 = '' OR full_name_normalized ILIKE '%' || lower($1) || '%' OR member_code ILIKE '%' || $1 || '%')
-    ORDER BY registered_at DESC LIMIT 100`, [search.slice(0, 80)])
-  return result.rows.map(({ phone_e164, ...row }) => ({ ...row, phone: role === 'ADMIN' || role === 'PASTOR_VIEWER' ? phone_e164 : maskPhone(phone_e164) }))
+  const { people } = await listPeoplePaginated(db, role, search, {
+    page: 1,
+    pageSize: 100,
+  })
+  return people
+}
+
+export async function getPersonAttendanceHistory(
+  db: Db,
+  role: StaffRole,
+  personId: string
+) {
+  const personResult = await db.query(
+    `SELECT id,member_code,first_name,last_name,phone_e164,lifecycle_stage,registered_at
+    FROM people WHERE id=$1 AND deleted_at IS NULL`,
+    [personId]
+  )
+  const row = personResult.rows[0] as
+    | {
+        id: string
+        member_code: string
+        first_name: string
+        last_name: string
+        phone_e164: string | null
+        lifecycle_stage: string
+        registered_at: string
+      }
+    | undefined
+  if (!row) return null
+
+  const historyResult = await db.query(
+    `SELECT a.id,a.service_id,a.checked_in_at,a.checkin_method,a.snapshot_stage,
+      s.name AS service_name,s.category AS service_category,s.scheduled_start_at
+    FROM attendance_records a
+    JOIN services s ON s.id=a.service_id
+    WHERE a.person_id=$1
+    ORDER BY a.checked_in_at DESC
+    LIMIT 100`,
+    [personId]
+  )
+
+  const { phone_e164, ...rest } = row
+  return {
+    person: {
+      ...rest,
+      phone:
+        role === 'ADMIN' || role === 'PASTOR_VIEWER'
+          ? phone_e164
+          : maskPhone(phone_e164),
+    },
+    history: historyResult.rows,
+  }
 }

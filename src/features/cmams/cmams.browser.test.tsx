@@ -12,9 +12,10 @@ import { page, userEvent } from 'vitest/browser'
 import { ApiError } from '@/lib/cmams-api'
 import { ThemeProvider } from '@/context/theme-provider'
 import { SidebarProvider } from '@/components/ui/sidebar'
-import { CardDownloads } from './cards'
+import { CardDownloads, CardsPage } from './cards'
 import { DashboardPage } from './dashboard'
 import { DeskPage } from './desk'
+import { DirectoryPage } from './directory'
 import { LoginPage } from './login'
 import { QueryState } from './query-state'
 import { ScanPage } from './scan'
@@ -43,8 +44,23 @@ function renderWithShell(element: React.ReactNode) {
     path: '/login',
     component: () => <div>Login screen</div>,
   })
+  const servicesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/services',
+    component: () => <div>Services screen</div>,
+  })
+  const scanRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/scan',
+    component: () => <div>Scan screen</div>,
+  })
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, loginRoute]),
+    routeTree: rootRoute.addChildren([
+      indexRoute,
+      loginRoute,
+      servicesRoute,
+      scanRoute,
+    ]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   })
   return render(
@@ -75,7 +91,7 @@ describe('CMAMS browser workflows', () => {
       'usher@example.com'
     )
     await userEvent.type(
-      screen.getByLabelText(/password/i),
+      screen.getByLabelText(/^password$/i),
       'wrong-password-123'
     )
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
@@ -143,6 +159,7 @@ describe('CMAMS browser workflows', () => {
                 scheduled_start_at: '2026-10-25T08:00:00Z',
                 checkin_opens_at: '2026-10-25T07:00:00Z',
                 checkin_closes_at: '2026-10-25T11:00:00Z',
+                locked_eligible_member_count: null,
               },
             ],
           })
@@ -156,7 +173,7 @@ describe('CMAMS browser workflows', () => {
     )
 
     const screen = await renderWithShell(<ScanPage />)
-    const input = screen.getByLabelText(/shortcode fallback/i)
+    const input = screen.getByLabelText(/card code/i)
     await expect.element(input).toBeVisible()
 
     await userEvent.type(input, '9K4-M7X')
@@ -188,6 +205,7 @@ describe('CMAMS browser workflows', () => {
                 scheduled_start_at: '2026-10-25T08:00:00Z',
                 checkin_opens_at: '2026-10-25T07:00:00Z',
                 checkin_closes_at: '2026-10-25T11:00:00Z',
+                locked_eligible_member_count: null,
               },
             ],
           })
@@ -221,15 +239,56 @@ describe('CMAMS browser workflows', () => {
     await expect.element(screen.getByText('Access denied')).toBeVisible()
   })
 
-  it('renders a downloadable card preview in the browser', async () => {
+  it('renders a downloadable card preview and issues cards by searching people', async () => {
+    const personId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (
+          url.includes(`/api/v1/people/${personId}/cards`) &&
+          init?.method === 'POST'
+        ) {
+          return jsonResponse({
+            card: {
+              memberCode: 'CM-1002',
+              shortCode: '4H7-P2W',
+              credential: `cma://v1/${'B'.repeat(22)}`,
+            },
+          })
+        }
+        if (url.includes('/api/v1/people?q=')) {
+          return jsonResponse({
+            people: [
+              {
+                id: personId,
+                member_code: 'CM-1002',
+                first_name: 'Chidi',
+                last_name: 'Nwosu',
+                phone: '+2348030001111',
+                lifecycle_stage: 'MEMBER',
+              },
+            ],
+          })
+        }
+        if (url.includes('/api/v1/cards')) {
+          return jsonResponse({ cards: [] })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
+
     const screen = await renderWithShell(
-      <CardDownloads
-        card={{
-          memberCode: 'CM-1001',
-          shortCode: '9K4-M7X',
-          credential: `cma://v1/${'A'.repeat(22)}`,
-        }}
-      />
+      <>
+        <CardDownloads
+          card={{
+            memberCode: 'CM-1001',
+            shortCode: '9K4-M7X',
+            credential: `cma://v1/${'A'.repeat(22)}`,
+          }}
+        />
+        <CardsPage />
+      </>
     )
     await expect
       .element(screen.getByAltText(/Attendance card for CM-1001/))
@@ -240,5 +299,81 @@ describe('CMAMS browser workflows', () => {
     await expect
       .element(screen.getByRole('button', { name: /download printable pdf/i }))
       .toBeEnabled()
+
+    await userEvent.type(screen.getByLabelText(/find person/i), 'Chidi')
+    await expect.element(screen.getByText('Chidi Nwosu')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: /^issue card$/i }))
+    await expect
+      .element(screen.getByAltText(/Attendance card for CM-1002/))
+      .toBeVisible()
+  })
+
+  it('displays paginated members and opens individual attendance history when a member is selected', async () => {
+    const personId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes(`/api/v1/people/${personId}/attendance`)) {
+          return jsonResponse({
+            person: {
+              id: personId,
+              member_code: 'CM-1001',
+              first_name: 'Ada',
+              last_name: 'Okafor',
+              phone: '+2348031234567',
+              lifecycle_stage: 'MEMBER',
+              registered_at: '2026-09-01T08:00:00Z',
+            },
+            history: [
+              {
+                id: 'att-1',
+                service_id: 'svc-1',
+                service_name: 'Youth Sunday Celebration',
+                service_category: 'SUNDAY_SERVICE',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checked_in_at: '2026-10-25T08:12:00Z',
+                checkin_method: 'QR_CAMERA',
+                snapshot_stage: 'MEMBER',
+              },
+            ],
+          })
+        }
+        if (url.includes('/api/v1/people')) {
+          return jsonResponse({
+            people: [
+              {
+                id: personId,
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                phone: '+2348031234567',
+                lifecycle_stage: 'MEMBER',
+                registered_at: '2026-09-01T08:00:00Z',
+                attendance_count: 1,
+                last_attended_at: '2026-10-25T08:12:00Z',
+              },
+            ],
+            total: 1,
+            page: 1,
+            pageSize: 15,
+            totalPages: 1,
+          })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<DirectoryPage />)
+    await expect.element(screen.getByText('Ada Okafor')).toBeVisible()
+    await expect
+      .element(screen.getByText(/Showing 1–1 of 1 person/i))
+      .toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: /view history/i }))
+    await expect
+      .element(screen.getByText('Youth Sunday Celebration'))
+      .toBeVisible()
+    await expect.element(screen.getByText('QR scan')).toBeVisible()
   })
 })

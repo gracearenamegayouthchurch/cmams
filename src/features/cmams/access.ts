@@ -10,12 +10,12 @@ export const homeForRole: Record<Staff['role'], string> = {
 
 const access: Record<Staff['role'], string[]> = {
   USHER_SCANNER: ['Scan'],
-  REGISTRATION_DESK: ['Scan', 'Registration', 'Directory'],
+  REGISTRATION_DESK: ['Scan', 'Registration', 'Members'],
   SERVICE_SUPERVISOR: [
     'Dashboard',
     'Scan',
     'Registration',
-    'Directory',
+    'Members',
     'Services',
     'Cards',
   ],
@@ -23,12 +23,12 @@ const access: Record<Staff['role'], string[]> = {
     'Dashboard',
     'Scan',
     'Registration',
-    'Directory',
+    'Members',
     'Services',
     'Cards',
     'Reports',
   ],
-  PASTOR_VIEWER: ['Dashboard', 'Directory', 'Reports'],
+  PASTOR_VIEWER: ['Dashboard', 'Members', 'Reports'],
 }
 
 export function visibleNavigation(role: Staff['role']): string[] {

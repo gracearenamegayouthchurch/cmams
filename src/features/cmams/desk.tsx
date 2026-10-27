@@ -1,12 +1,21 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { CheckCircle2, Search, UserCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/cmams-api'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CardDownloads } from './cards'
+import { formatStage, stageBadgeClass } from './format'
 import { ChurchPage } from './pages'
 import { ServicePicker } from './service-picker'
 import { type IssuedCard, type Person, type Service } from './types'
@@ -38,11 +47,12 @@ export function DeskPage() {
 
   async function checkDuplicates() {
     if (!firstName.trim() || !lastName.trim()) {
-      setError('Enter a first and last name before searching.')
+      setError('Enter both first and last name to check existing records.')
       return
     }
     setBusy(true)
     setError('')
+    setMessage('')
     setCandidates([])
     setConfirmed(false)
     try {
@@ -58,11 +68,14 @@ export function DeskPage() {
       )
       setCandidates(response.matches)
       if (!response.matches.length)
-        setMessage('No likely match found. You may register this person.')
-      else setMessage('Review these profiles before creating a new one.')
+        setMessage('No existing match found. Ready to register.')
+      else
+        setMessage(
+          'Found similar records. Check whether this person is already registered.'
+        )
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : 'Duplicate search failed'
+        reason instanceof Error ? reason.message : 'Could not check records'
       )
     } finally {
       setBusy(false)
@@ -95,32 +108,32 @@ export function DeskPage() {
           { method: 'POST', body: '{}' }
         )
         setCard(issued.card)
-        setMessage(
-          'Profile registered and credential generated. Download the card now.'
-        )
+        setMessage('Registered and check-in card generated.')
       } catch {
         setError(
-          `Profile ${response.person.member_code} was created, but its card could not be issued. Ask a supervisor to issue it.`
+          `Registered ${response.person.member_code}, but the card could not be generated. Ask a supervisor to issue it on the Cards page.`
         )
       }
     } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 409)
+      if (reason instanceof ApiError && reason.status === 409) {
         setError(
-          'A likely match already exists. Search for duplicates and confirm a distinct person if appropriate.'
+          'A similar record already exists. Click "Check for matches" to review before registering.'
         )
-      else
+      } else {
         setError(
           reason instanceof Error ? reason.message : 'Registration failed'
         )
+      }
     } finally {
       setBusy(false)
     }
   }
 
-  async function manualCheckin(existing: Person) {
-    if (!activeId || manualReason.trim().length < 3) {
+  async function manualCheckin(existing: Person, defaultReason?: string) {
+    const reasonText = (defaultReason ?? manualReason).trim()
+    if (!activeId || reasonText.length < 3) {
       setError(
-        'Select an open service and enter a reason (at least 3 characters).'
+        'Choose an open service and enter a brief reason (3+ characters).'
       )
       return
     }
@@ -134,13 +147,17 @@ export function DeskPage() {
           body: JSON.stringify({
             personId: existing.id,
             eventId: crypto.randomUUID(),
-            reason: manualReason,
+            reason: reasonText,
           }),
         }
       )
-      setMessage(
-        `${existing.first_name} ${existing.last_name}: ${result.outcome.replace(/_/g, ' ').toLowerCase()}.`
-      )
+      const label =
+        result.outcome === 'CHECKED_IN'
+          ? 'checked in'
+          : result.outcome === 'ALREADY_CHECKED_IN'
+            ? 'already checked in'
+            : 'not checked in (service closed)'
+      setMessage(`${existing.first_name} ${existing.last_name} — ${label}.`)
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : 'Check-in was not recorded'
@@ -153,12 +170,36 @@ export function DeskPage() {
   return (
     <ChurchPage
       title='Registration desk'
-      description='Search for a likely match, record consent, and issue a credential for a new person.'
+      description='Check for an existing record, capture consent, and issue a check-in card.'
     >
-      <div className='grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,1fr)]'>
-        <Card>
+      {message && (
+        <div
+          role='status'
+          className='mb-6 flex items-center gap-2.5 rounded-xl border border-sky-500/35 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:bg-sky-950/40 dark:text-sky-100'
+        >
+          <CheckCircle2
+            className='size-4 shrink-0 text-sky-600 dark:text-sky-400'
+            aria-hidden='true'
+          />
+          <span>{message}</span>
+        </div>
+      )}
+      {error && (
+        <div
+          role='alert'
+          className='mb-6 rounded-xl border border-destructive/35 bg-destructive/10 px-4 py-3 text-sm text-destructive'
+        >
+          {error}
+        </div>
+      )}
+
+      <div className='grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,1fr)]'>
+        <Card className='h-fit'>
           <CardHeader>
-            <CardTitle>Person details</CardTitle>
+            <CardTitle>New registration</CardTitle>
+            <CardDescription>
+              One profile per person. Family members can share a phone number.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form
@@ -166,11 +207,12 @@ export function DeskPage() {
               className='space-y-4'
             >
               <div className='grid gap-4 sm:grid-cols-2'>
-                <div className='space-y-2'>
+                <div className='space-y-1.5'>
                   <Label htmlFor='first-name'>First name</Label>
                   <Input
                     id='first-name'
                     required
+                    placeholder='Ada'
                     value={firstName}
                     onChange={(event) => {
                       setFirstName(event.target.value)
@@ -179,11 +221,12 @@ export function DeskPage() {
                     }}
                   />
                 </div>
-                <div className='space-y-2'>
+                <div className='space-y-1.5'>
                   <Label htmlFor='last-name'>Last name</Label>
                   <Input
                     id='last-name'
                     required
+                    placeholder='Okafor'
                     value={lastName}
                     onChange={(event) => {
                       setLastName(event.target.value)
@@ -193,7 +236,8 @@ export function DeskPage() {
                   />
                 </div>
               </div>
-              <div className='space-y-2'>
+
+              <div className='space-y-1.5'>
                 <Label htmlFor='phone'>Phone number (optional)</Label>
                 <Input
                   id='phone'
@@ -207,87 +251,140 @@ export function DeskPage() {
                   placeholder='+2348031234567'
                 />
                 <p className='text-xs text-muted-foreground'>
-                  Use international format. Family members may share a number.
+                  Include country code (e.g. +234). Leave blank if unavailable.
                 </p>
               </div>
-              <Button
-                variant='outline'
-                type='button'
-                onClick={() => void checkDuplicates()}
-                disabled={busy}
-              >
-                Check for matches
-              </Button>
-              <div className='rounded-md border bg-muted/30 p-4 text-sm'>
-                <p>
-                  We use your name, optional phone number, and service
-                  attendance to manage church records and support pastoral care.
-                  Staff will protect this information and use it only for church
-                  purposes.
+
+              <div>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  type='button'
+                  onClick={() => void checkDuplicates()}
+                  disabled={busy}
+                >
+                  <Search className='size-4' />
+                  Check for matches
+                </Button>
+              </div>
+
+              <div className='rounded-xl border bg-muted/30 p-4 text-sm'>
+                <p className='font-medium text-foreground'>Privacy notice</p>
+                <p className='mt-1 text-xs leading-relaxed text-muted-foreground'>
+                  Grace Arena stores your name, optional phone number, and
+                  service attendance for church records and pastoral follow-up.
                 </p>
-                <div className='mt-3 flex items-start gap-3'>
+                <div className='mt-3 flex items-start gap-2.5'>
                   <Checkbox
                     id='consent'
                     checked={consent}
                     onCheckedChange={(value) => setConsent(value === true)}
                   />
-                  <Label htmlFor='consent' className='leading-snug'>
-                    The person has read or heard this notice and agrees to this
-                    use of their information.
+                  <Label htmlFor='consent' className='text-sm leading-snug'>
+                    Person agrees to this privacy notice
                   </Label>
                 </div>
               </div>
+
               {candidates.length > 0 && (
-                <div className='space-y-2'>
-                  <div className='flex items-start gap-3'>
+                <div className='space-y-2 rounded-xl border border-amber-500/35 bg-amber-50/60 p-3.5 dark:bg-amber-950/25'>
+                  <div className='flex items-start gap-2.5'>
                     <Checkbox
                       id='distinct'
                       checked={confirmed}
                       onCheckedChange={(value) => setConfirmed(value === true)}
                     />
-                    <Label htmlFor='distinct' className='leading-snug'>
-                      I reviewed the matches and confirm this is a different
-                      person.
+                    <Label htmlFor='distinct' className='text-sm leading-snug'>
+                      I checked the matches and confirm this is a different
+                      person
                     </Label>
                   </div>
                   {householdId && (
-                    <p className='text-xs text-sky-700'>
-                      Linked to the selected household.
+                    <p className='text-xs text-sky-700 dark:text-sky-300'>
+                      Linked to selected family household.
                     </p>
                   )}
                 </div>
               )}
+
               <Button
                 type='submit'
+                className='w-full sm:w-auto'
                 disabled={
                   busy || !consent || (candidates.length > 0 && !confirmed)
                 }
               >
-                {busy ? 'Working…' : 'Register person'}
+                {busy ? 'Saving…' : 'Register person'}
               </Button>
             </form>
           </CardContent>
         </Card>
+
         <div className='space-y-5'>
+          {person && (
+            <Card className='border-sky-500/35'>
+              <CardHeader className='pb-3'>
+                <div className='flex flex-wrap items-center justify-between gap-2'>
+                  <CardTitle className='text-base'>
+                    {person.first_name} {person.last_name}
+                  </CardTitle>
+                  <div className='flex items-center gap-2'>
+                    <Badge variant='outline' className='font-mono'>
+                      {person.member_code}
+                    </Badge>
+                    <Badge
+                      variant='outline'
+                      className={stageBadgeClass(person.lifecycle_stage)}
+                    >
+                      {formatStage(person.lifecycle_stage)}
+                    </Badge>
+                  </div>
+                </div>
+              </CardHeader>
+              {activeId && (
+                <CardContent className='pt-0'>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    disabled={busy}
+                    onClick={() =>
+                      void manualCheckin(person, 'Registered at desk')
+                    }
+                  >
+                    <UserCheck className='size-4' />
+                    Check in to open service
+                  </Button>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {card && <CardDownloads key={card.shortCode} card={card} />}
+
           <Card>
             <CardHeader>
-              <CardTitle>Possible matches</CardTitle>
+              <CardTitle>Matching records</CardTitle>
+              <CardDescription>
+                Use an existing profile instead of creating a duplicate.
+              </CardDescription>
             </CardHeader>
             <CardContent className='space-y-4'>
               {candidates.length === 0 ? (
                 <p className='text-sm text-muted-foreground'>
-                  Enter details and check for matches before registering. A
-                  shared phone number does not mean two people are the same.
+                  Enter a name or phone number and click &ldquo;Check for
+                  matches&rdquo; to search existing profiles.
                 </p>
               ) : (
                 <>
                   <ServicePicker
                     activeOnly
+                    label='Open service (for manual check-in)'
                     services={services.data?.services ?? []}
                     value={activeId}
                     onChange={setServiceId}
                   />
-                  <div className='space-y-2'>
+                  <div className='space-y-1.5'>
                     <Label htmlFor='manual-reason'>
                       Reason for manual check-in
                     </Label>
@@ -295,67 +392,61 @@ export function DeskPage() {
                       id='manual-reason'
                       value={manualReason}
                       onChange={(event) => setManualReason(event.target.value)}
-                      placeholder='Visitor has no card'
+                      placeholder='Forgot card at home'
                     />
                   </div>
-                  {candidates.map((match) => (
-                    <div key={match.id} className='rounded-lg border p-3'>
-                      <strong>
-                        {match.first_name} {match.last_name}
-                      </strong>
-                      <p className='text-sm text-muted-foreground'>
-                        {match.member_code} ·{' '}
-                        {match.shared_phone
-                          ? 'Shares phone number'
-                          : 'Similar name'}
-                      </p>
-                      <div className='mt-3 flex flex-wrap gap-2'>
-                        <Button
-                          size='sm'
-                          variant='outline'
-                          disabled={busy || !activeId}
-                          onClick={() => void manualCheckin(match)}
-                        >
-                          Use profile & check in
-                        </Button>
-                        {match.household_id && (
+                  <div className='space-y-3'>
+                    {candidates.map((match) => (
+                      <div
+                        key={match.id}
+                        className='rounded-xl border bg-muted/20 p-3.5'
+                      >
+                        <div className='flex flex-wrap items-center justify-between gap-2'>
+                          <strong className='text-sm'>
+                            {match.first_name} {match.last_name}
+                          </strong>
+                          <span className='font-mono text-xs text-muted-foreground'>
+                            {match.member_code}
+                          </span>
+                        </div>
+                        <p className='mt-1 text-xs text-muted-foreground'>
+                          {match.shared_phone
+                            ? 'Shares phone number'
+                            : 'Similar name'}
+                        </p>
+                        <div className='mt-3 flex flex-wrap gap-2'>
                           <Button
+                            type='button'
                             size='sm'
-                            variant='ghost'
-                            onClick={() => {
-                              setHouseholdId(match.household_id ?? '')
-                              setConfirmed(true)
-                            }}
+                            variant='outline'
+                            disabled={busy || !activeId}
+                            onClick={() => void manualCheckin(match)}
                           >
-                            Register as family member
+                            Use profile & check in
                           </Button>
-                        )}
+                          {match.household_id && (
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant='ghost'
+                              onClick={() => {
+                                setHouseholdId(match.household_id ?? '')
+                                setConfirmed(true)
+                              }}
+                            >
+                              Register as family member
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </>
               )}
             </CardContent>
           </Card>
-          {person && (
-            <p className='text-sm'>
-              Registered profile: <strong>{person.member_code}</strong> · ID:{' '}
-              <code className='break-all'>{person.id}</code>
-            </p>
-          )}
-          {card && <CardDownloads key={card.shortCode} card={card} />}
         </div>
       </div>
-      {message && (
-        <p role='status' className='mt-5 text-sm text-sky-700'>
-          {message}
-        </p>
-      )}
-      {error && (
-        <p role='alert' className='mt-5 text-sm text-destructive'>
-          {error}
-        </p>
-      )}
     </ChurchPage>
   )
 }
