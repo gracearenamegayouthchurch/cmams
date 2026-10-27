@@ -7,6 +7,22 @@ const qrSize = 510
 const pdfWidth = 288
 const pdfHeight = 368
 
+function loadLogo(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const timer = setTimeout(() => resolve(null), 600)
+    img.onload = () => {
+      clearTimeout(timer)
+      resolve(img)
+    }
+    img.onerror = () => {
+      clearTimeout(timer)
+      resolve(null)
+    }
+    img.src = src
+  })
+}
+
 async function renderCardCanvas(card: IssuedCard) {
   const canvas = document.createElement('canvas')
   canvas.width = cardWidth
@@ -23,14 +39,21 @@ async function renderCardCanvas(card: IssuedCard) {
   context.fillStyle = '#0ea5e9'
   context.fillRect(0, 136, cardWidth, 6)
 
+  const logo = await loadLogo('/images/gamyc-emblem.png')
+  let textLeft = 48
+  if (logo) {
+    context.drawImage(logo, 40, 22, 92, 92)
+    textLeft = 148
+  }
+
   context.textBaseline = 'alphabetic'
   context.textAlign = 'left'
   context.fillStyle = '#ffffff'
   context.font = 'bold 30px Inter, Arial, sans-serif'
-  context.fillText('GRACE ARENA', 48, 68)
+  context.fillText('GRACE ARENA', textLeft, 68)
   context.fillStyle = '#7dd3fc'
   context.font = '600 15px Inter, Arial, sans-serif'
-  context.fillText('MEGA YOUTH CHURCH', 48, 98)
+  context.fillText('MEGA YOUTH CHURCH', textLeft, 98)
 
   context.textAlign = 'right'
   context.fillStyle = '#bae6fd'

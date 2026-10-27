@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { AlertCircle, ScanLine } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { api, type Staff } from '@/lib/cmams-api'
 import { Button } from '@/components/ui/button'
 import {
@@ -62,12 +62,11 @@ export function LoginPage() {
 
       <div className='relative z-10 w-full max-w-[400px] space-y-6'>
         <div className='flex flex-col items-center text-center'>
-          <div className='flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 text-white shadow-lg ring-1 ring-white/25'>
-            <ScanLine className='size-6' aria-hidden='true' />
-          </div>
-          <p className='mt-3.5 text-xs font-semibold tracking-widest text-sky-300 uppercase drop-shadow-xs'>
-            Grace Arena Mega Youth Church
-          </p>
+          <img
+            src='/images/grace-arena-logo.png'
+            alt='Grace Arena Mega Youth Church'
+            className='h-28 w-auto object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.65)]'
+          />
         </div>
 
         <Card className='border-white/15 bg-card/95 shadow-2xl backdrop-blur-md'>

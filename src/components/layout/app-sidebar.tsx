@@ -1,4 +1,3 @@
-import { ScanLine } from 'lucide-react'
 import { type Staff } from '@/lib/cmams-api'
 import { useLayout } from '@/context/layout-provider'
 import {
@@ -28,9 +27,11 @@ export function AppSidebar({ staff }: { staff: Staff }) {
     <Sidebar collapsible={collapsible} variant={variant}>
       <SidebarHeader className='border-b border-sidebar-border pb-3'>
         <div className='flex items-center gap-3 px-2 pt-1'>
-          <span className='flex size-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-xs'>
-            <ScanLine className='size-5 stroke-[2.2]' />
-          </span>
+          <img
+            src='/images/gamyc-emblem.png'
+            alt='GAMYC'
+            className='size-9 shrink-0 object-contain drop-shadow-xs'
+          />
           <span className='grid min-w-0 leading-tight group-data-[collapsible=icon]:hidden'>
             <strong className='truncate text-sm font-semibold tracking-tight text-sidebar-foreground'>
               Grace Arena
