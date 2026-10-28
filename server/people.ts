@@ -12,13 +12,27 @@ const registration = z.object({
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().min(1).max(100),
   middleName: z.string().trim().max(100).optional(),
+  email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
+  compoundId: z.uuid(),
+  room: z.string().trim().max(100).optional(),
+  departmentId: z.uuid().optional(),
+  birthMonth: z.number().int().min(1).max(12),
+  birthDay: z.number().int().min(1).max(31),
+  birthYear: z.number().int().min(1900).max(new Date().getFullYear()).optional(),
   phone: z
     .union([z.string().regex(/^\+[1-9]\d{7,14}$/), z.null()])
     .optional(),
   householdId: z.uuid().optional(),
   consent: z.literal(true),
   confirmDistinct: z.boolean().optional(),
-})
+}).refine((data) => {
+  // A yearless February 29 is possible; use a known leap year to validate it.
+  const year = data.birthYear ?? 2000
+  const date = new Date(Date.UTC(year, data.birthMonth - 1, data.birthDay))
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === data.birthMonth - 1 &&
+    date.getUTCDate() === data.birthDay
+}, { path: ['birthDay'], message: 'Enter a valid calendar date' })
 export type Registration = z.infer<typeof registration>
 export function validateRegistration(input: unknown) {
   const data = registration.parse(input)

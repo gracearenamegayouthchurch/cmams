@@ -6,21 +6,38 @@ it('checks swapped first and last names when looking for duplicates', () => {
 })
 
 it('requires informed consent before a person can be registered', () => {
-  expect(() => validateRegistration({ firstName: 'Ada', lastName: 'Okafor', consent: false })).toThrow()
-  expect(validateRegistration({ firstName: 'Ada', lastName: 'Okafor', consent: true }).phone).toBeNull()
+  const details = { firstName: 'Ada', lastName: 'Okafor', email: 'ada@example.org', compoundId: '11111111-1111-4111-8111-111111111111', birthMonth: 2, birthDay: 29 }
+  expect(() => validateRegistration({ ...details, consent: false })).toThrow()
+  expect(validateRegistration({ ...details, consent: true }).phone).toBeNull()
+})
+
+it('requires an email, compound and birth month/day, while birth year is optional', () => {
+  const details = { firstName: 'Ada', lastName: 'Okafor', email: ' Ada@Example.org ', compoundId: '11111111-1111-4111-8111-111111111111', birthMonth: 2, birthDay: 29, consent: true }
+  expect(validateRegistration(details)).toMatchObject({ email: 'ada@example.org', birthMonth: 2, birthDay: 29 })
+  for (const key of ['email', 'compoundId', 'birthMonth', 'birthDay'] as const) {
+    const missing = { ...details }
+    delete (missing as Record<string, unknown>)[key]
+    expect(() => validateRegistration(missing)).toThrow()
+  }
+  expect(() => validateRegistration({ ...details, birthYear: 2025 })).toThrow()
+  expect(validateRegistration({ ...details, birthYear: 2024 }).birthYear).toBe(2024)
+  expect(() => validateRegistration({ ...details, birthMonth: 4, birthDay: 31 })).toThrow()
+  expect(() => validateRegistration({ ...details, birthYear: 2100 })).toThrow()
 })
 
 it('stops a likely duplicate unless the operator confirms distinct identity', async () => {
+  const details = { firstName: 'Ada', lastName: 'Okafor', email: 'ada@example.org', compoundId: '11111111-1111-4111-8111-111111111111', birthMonth: 2, birthDay: 29, consent: true }
   const sql: string[] = []
   const db = { query: async (text: string) => {
     sql.push(text)
     return { rows: [{ id: 'existing', member_code: 'CM-1001', first_name: 'Ada', last_name: 'Okafor', score: 0.9 }] }
   } }
-  await expect(registerPerson(db as never, { firstName: 'Ada', lastName: 'Okafor', consent: true }, 'staff')).rejects.toThrow('Possible duplicate')
+  await expect(registerPerson(db as never, details, 'staff')).rejects.toThrow('Possible duplicate')
   expect(sql.every((statement) => !statement.includes('INSERT'))).toBe(true)
 })
 
 it('rolls back a registration when writing stage history fails', async () => {
+  const details = { firstName: 'Ada', lastName: 'Okafor', email: 'ada@example.org', compoundId: '11111111-1111-4111-8111-111111111111', birthMonth: 2, birthDay: 29, consent: true }
   const statements: string[] = []
   const client = { query: async (text: string) => {
     statements.push(text)
@@ -28,7 +45,7 @@ it('rolls back a registration when writing stage history fails', async () => {
     return { rows: [{ id: 'new-person' }] }
   }, release: () => {} }
   const db = { query: async () => ({ rows: [] }), connect: async () => client }
-  await expect(registerPerson(db as never, { firstName: 'Ada', lastName: 'Okafor', consent: true }, 'staff')).rejects.toThrow('history write failed')
+  await expect(registerPerson(db as never, details, 'staff')).rejects.toThrow('history write failed')
   expect(statements).toContain('ROLLBACK')
 })
 

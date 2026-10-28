@@ -154,6 +154,10 @@ describe('API boundary', () => {
         body: JSON.stringify({
           firstName: 'Ada',
           lastName: 'Okafor',
+          email: 'ada@example.org',
+          compoundId: '11111111-1111-4111-8111-111111111111',
+          birthMonth: 2,
+          birthDay: 29,
           consent: true,
         }),
       })
