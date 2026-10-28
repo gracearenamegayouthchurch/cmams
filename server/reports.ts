@@ -30,7 +30,7 @@ export async function dashboardSummary(db: Pick<pg.Pool, 'query'>, serviceId: st
   return { ...row, turnoutPercent: turnoutPercent(Number(row.members), Number(row.eligible)) }
 }
 
-export async function absenteeList(db: Pick<pg.Pool, 'query'>, consecutive = 3) {
+export async function absenteeList(db: Pick<pg.Pool, 'query'>, consecutive = 2) {
   const result = await db.query(`WITH recent AS (
     SELECT id,scheduled_start_at FROM services WHERE category='SUNDAY_SERVICE' AND status='CHECKIN_CLOSED'
     ORDER BY scheduled_start_at DESC LIMIT $1

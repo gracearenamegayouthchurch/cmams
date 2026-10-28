@@ -21,7 +21,7 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 | `/directory` | Single-church directory with role-based phone masking                                                                      | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`, `PASTOR_VIEWER` |
 | `/services`  | Schedule gatherings, open check-in windows, close & freeze eligible member count                                           | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
 | `/cards`     | Supervised active-card lookup, revocation, and atomic replacement (browser-rendered PNG + printable PDF)                   | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
-| `/reports`   | Audited attendance CSV export and 3-Sunday consecutive absentee pastoral list                                              | `ADMIN`, `PASTOR_VIEWER`                                            |
+| `/reports`   | Audited attendance CSV export and 2-Sunday consecutive absentee pastoral list                                              | `ADMIN`, `PASTOR_VIEWER`                                            |
 
 ## Local Setup
 

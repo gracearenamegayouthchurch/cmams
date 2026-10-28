@@ -213,7 +213,7 @@ export async function handleApi(request: Request): Promise<Response> {
         const rawCount = url.searchParams.get('count')
         const count = rawCount
           ? z.coerce.number().int().min(1).max(12).parse(rawCount)
-          : 3
+          : undefined
         const people = await absenteeList(getDb(), count)
         await auditExport(getDb(), staff.id, 'ABSENTEE_EXPORT')
         if (path.endsWith('.csv'))

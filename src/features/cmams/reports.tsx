@@ -42,7 +42,7 @@ export function ReportsPage() {
   const serviceId = selectedServiceId || services.data?.services[0]?.id || ''
 
   const absentees = useQuery({
-    queryKey: ['absentees', 3],
+    queryKey: ['absentees', 2],
     queryFn: () => api<{ people: Absentee[] }>('/api/v1/reports/absentees'),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
@@ -100,7 +100,7 @@ export function ReportsPage() {
             <div className='flex flex-wrap items-start justify-between gap-3'>
               <div>
                 <div className='flex items-center gap-2.5'>
-                  <CardTitle>Missed last 3 Sundays</CardTitle>
+                  <CardTitle>Missed last 2 Sundays</CardTitle>
                   {absentees.data && (
                     <Badge variant='secondary' className='tabular-nums'>
                       {absentees.data.people.length} for follow-up
@@ -108,7 +108,7 @@ export function ReportsPage() {
                   )}
                 </div>
                 <CardDescription className='mt-1'>
-                  Members and regular attendees absent from the last three
+                  Members and regular attendees absent from the last two
                   closed Sunday services.
                 </CardDescription>
               </div>
@@ -128,7 +128,7 @@ export function ReportsPage() {
               error={absentees.error}
               empty={absentees.data?.people.length === 0}
               emptyTitle='No absentees to follow up'
-              emptyDescription='Appears when members registered before the last three closed Sunday services miss all three.'
+              emptyDescription='Appears when members registered before the last two closed Sunday services miss both.'
               onRetry={() => void absentees.refetch()}
             />
             {absentees.data && absentees.data.people.length > 0 && (
