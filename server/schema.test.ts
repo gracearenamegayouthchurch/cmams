@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = new URL('../supabase/migrations/001_cmams.sql', import.meta.url)
+const stageMigration = new URL(
+  '../supabase/migrations/008_first_timer_membership.sql',
+  import.meta.url
+)
 
 describe('single-church schema', () => {
   it('has no campus identifiers or campus table', () => {
@@ -20,5 +24,17 @@ describe('single-church schema', () => {
     expect(sql).toMatch(
       /EXCEPTION WHEN unique_violation[\s\S]*WHERE idempotency_key=p_idempotency_key/i
     )
+  })
+})
+
+describe('first-timer membership promotion', () => {
+  it('promotes after two distinct services without a consecutive requirement', () => {
+    const sql = readFileSync(stageMigration, 'utf8')
+    expect(sql).toMatch(/AFTER INSERT ON attendance_records/i)
+    expect(sql).toMatch(/count\(\*\)[\s\S]*attendance_records/i)
+    expect(sql).toMatch(/attended_services < 2/i)
+    expect(sql).toMatch(/SET lifecycle_stage = 'MEMBER'/i)
+    expect(sql).toMatch(/INSERT INTO person_stage_history/i)
+    expect(sql).toMatch(/PERSON_STAGE_CHANGED/i)
   })
 })
