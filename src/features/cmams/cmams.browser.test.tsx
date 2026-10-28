@@ -80,6 +80,35 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('CMAMS browser workflows', () => {
+  it('shows required registration details and an optional birth year', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/catalogs')
+          return jsonResponse({
+            compounds: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Main Compound',
+              },
+            ],
+            departments: [],
+          })
+        return jsonResponse({ services: [] })
+      })
+    )
+    const screen = await renderWithShell(<DeskPage />)
+    await expect.element(screen.getByLabelText('Email')).toBeVisible()
+    await expect
+      .element(screen.getByText('Compound', { exact: true }))
+      .toBeVisible()
+    await expect.element(screen.getByLabelText('Birth month')).toBeVisible()
+    await expect.element(screen.getByLabelText('Birth day')).toBeVisible()
+    await expect
+      .element(screen.getByLabelText('Birth year (optional)'))
+      .toBeVisible()
+  })
+
   it('shows an administrator the temporary password once for a new staff account', async () => {
     vi.stubGlobal(
       'fetch',

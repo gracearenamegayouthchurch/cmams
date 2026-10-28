@@ -38,6 +38,10 @@ export function validateRegistration(input: unknown) {
   const data = registration.parse(input)
   return { ...data, phone: data.phone ?? null }
 }
+
+export class InvalidCatalogSelection extends Error {
+  constructor() { super('Choose an active compound and department') }
+}
 export function reversedName(fullName: string) {
   return fullName.trim().split(/\s+/).reverse().join(' ')
 }
@@ -47,18 +51,21 @@ type Db = Pick<pg.Pool, 'query' | 'connect'>
 export async function findDuplicates(
   db: Db,
   fullName: string,
-  phone: string | null
+  phone: string | null,
+  email: string | null = null
 ) {
   const name = fullName.trim().toLowerCase()
   const result = await db.query(
     `SELECT id,member_code,first_name,last_name,household_id,
       greatest(similarity(full_name_normalized,$1),similarity(full_name_normalized,$2)) AS score,
-      (phone_e164=$3 AND $3 IS NOT NULL) AS shared_phone
+       (phone_e164=$3 AND $3 IS NOT NULL) AS shared_phone
     FROM people WHERE deleted_at IS NULL AND (
-      phone_e164=$3 AND $3 IS NOT NULL OR
-      similarity(full_name_normalized,$1)>0.5 OR similarity(full_name_normalized,$2)>0.5)
-    ORDER BY (phone_e164=$3 AND $3 IS NOT NULL) DESC, score DESC LIMIT 5`,
-    [name, reversedName(name), phone]
+       phone_e164=$3 AND $3 IS NOT NULL OR
+       lower(email)=lower($4) AND $4 IS NOT NULL OR
+       similarity(full_name_normalized,$1)>0.5 OR similarity(full_name_normalized,$2)>0.5)
+     ORDER BY (phone_e164=$3 AND $3 IS NOT NULL) DESC,
+       (lower(email)=lower($4) AND $4 IS NOT NULL) DESC, score DESC LIMIT 5`,
+    [name, reversedName(name), phone, email]
   )
   return result.rows
 }
@@ -68,16 +75,31 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
   const matches = await findDuplicates(
     db,
     `${data.firstName} ${data.lastName}`,
-    data.phone
+    data.phone,
+    data.email
   )
   if (matches.length && !data.confirmDistinct)
     throw new DuplicatePersonError(matches)
   const client = await db.connect()
   try {
     await client.query('BEGIN')
+    const compound = await client.query(
+      'SELECT id FROM compounds WHERE id=$1 AND is_active=true FOR SHARE',
+      [data.compoundId]
+    )
+    if (!compound.rows.length) throw new InvalidCatalogSelection()
+    if (data.departmentId) {
+      const department = await client.query(
+        'SELECT id FROM departments WHERE id=$1 AND is_active=true FOR SHARE',
+        [data.departmentId]
+      )
+      if (!department.rows.length) throw new InvalidCatalogSelection()
+    }
     const created = await client.query(
-      `INSERT INTO people(first_name,middle_name,last_name,phone_e164,household_id,privacy_consent_at,registered_by_staff_id)
-      VALUES($1,$2,$3,$4,$5,now(),$6) RETURNING id,member_code,first_name,last_name,lifecycle_stage`,
+      `INSERT INTO people(first_name,middle_name,last_name,phone_e164,household_id,privacy_consent_at,registered_by_staff_id,
+        email,compound_id,room,birth_month,birth_day,birth_year)
+       VALUES($1,$2,$3,$4,$5,now(),$6,$7,$8,$9,$10,$11,$12)
+       RETURNING id,member_code,first_name,last_name,lifecycle_stage`,
       [
         data.firstName,
         data.middleName ?? null,
@@ -85,9 +107,22 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
         data.phone,
         data.householdId ?? null,
         staffId,
+        data.email,
+        data.compoundId,
+        data.room || null,
+        data.birthMonth,
+        data.birthDay,
+        data.birthYear ?? null,
       ]
     )
     const person = created.rows[0]
+    if (data.departmentId) {
+      await client.query(
+        `INSERT INTO person_departments(person_id,department_id,assigned_by_staff_id)
+         VALUES($1,$2,$3)`,
+        [person.id, data.departmentId, staffId]
+      )
+    }
     await client.query(
       `INSERT INTO person_stage_history(person_id,new_stage,changed_by_staff_id,reason)
       VALUES($1,'FIRST_TIMER',$2,'Registered at front desk')`,

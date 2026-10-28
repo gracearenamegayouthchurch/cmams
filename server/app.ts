@@ -9,6 +9,7 @@ import {
 import { roles, type Capability, allow } from './rbac.js'
 import {
   DuplicatePersonError,
+  InvalidCatalogSelection,
   findDuplicates,
   getPersonAttendanceHistory,
   listPeoplePaginated,
@@ -22,6 +23,7 @@ import {
   ServiceTransitionError,
 } from './services.js'
 import { IdempotencyConflict, manualCheckin, scanCard } from './checkins.js'
+import { createCatalogEntry, deactivateCatalogEntry, listActiveCatalogs, renameCatalogEntry } from './catalogs.js'
 import { StaffError, changeOwnPassword, createStaff, listStaff, resetStaffPassword, updateStaff } from './staff.js'
 import {
   absenteeList,
@@ -360,6 +362,27 @@ export async function handleApi(request: Request): Promise<Response> {
       return json({ ok: true })
     }
 
+    if (path === '/api/v1/catalogs' && method === 'GET') {
+      if (!allow(staff.role, 'register') && !allow(staff.role, 'directory'))
+        return json({ error: 'Action not permitted' }, 403)
+      return json(await listActiveCatalogs(getDb()))
+    }
+    const catalogRoute = path.match(/^\/api\/v1\/catalogs\/(compounds|departments)(?:\/([0-9a-f-]{36}))?$/i)
+    if (catalogRoute) {
+      if (staff.role !== 'ADMIN') return json({ error: 'Action not permitted' }, 403)
+      const [, kind, id] = catalogRoute
+      if (!id && method === 'POST')
+        return json({ entry: await createCatalogEntry(getDb(), kind as 'compounds' | 'departments', (await request.json()).name) }, 201)
+      if (id && method === 'PATCH') {
+        const entry = await renameCatalogEntry(getDb(), kind as 'compounds' | 'departments', id, (await request.json()).name)
+        return entry ? json({ entry }) : json({ error: 'Catalog entry not found' }, 404)
+      }
+      if (id && method === 'DELETE') {
+        const entry = await deactivateCatalogEntry(getDb(), kind as 'compounds' | 'departments', id)
+        return entry ? json({ entry }) : json({ error: 'Catalog entry not found' }, 404)
+      }
+      return json({ error: 'Method not allowed' }, 405)
+    }
     const actions: [RegExp, Capability][] = [
       [/^\/api\/v1\/people(?:\/|$)/, method === 'GET' ? 'directory' : 'register'],
       [
@@ -398,10 +421,11 @@ export async function handleApi(request: Request): Promise<Response> {
         .object({
           fullName: z.string().trim().min(2).max(200),
           phone: z.string().nullable().optional(),
+          email: z.email().nullable().optional(),
         })
         .parse(await request.json())
       return json({
-        matches: await findDuplicates(getDb(), input.fullName, input.phone ?? null),
+        matches: await findDuplicates(getDb(), input.fullName, input.phone ?? null, input.email ?? null),
       })
     }
     if (path === '/api/v1/people' && method === 'POST')
@@ -411,6 +435,9 @@ export async function handleApi(request: Request): Promise<Response> {
       )
     return json({ error: 'Endpoint not implemented' }, 501)
   } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === '23505')
+      return json({ error: 'An entry with that name already exists' }, 409)
+    if (error instanceof InvalidCatalogSelection) return json({ error: error.message }, 400)
     if (error instanceof StaffError) return json({ error: error.message }, error.status)
     if (error instanceof DuplicatePersonError)
       return json({ error: error.message, matches: error.matches }, 409)

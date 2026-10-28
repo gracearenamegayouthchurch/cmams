@@ -49,6 +49,42 @@ it('rolls back a registration when writing stage history fails', async () => {
   expect(statements).toContain('ROLLBACK')
 })
 
+it('stores new registration fields and one active department in the same transaction', async () => {
+  const statements: { sql: string; params?: unknown[] }[] = []
+  const client = {
+    query: async (sql: string, params?: unknown[]) => {
+      statements.push({ sql, params })
+      return { rows: [{ id: 'person', member_code: 'CM-1002' }] }
+    },
+    release: () => {},
+  }
+  const db = { query: async () => ({ rows: [] }), connect: async () => client }
+  const details = { firstName: 'Ada', lastName: 'Okafor', email: 'Ada@Example.org', compoundId: '11111111-1111-4111-8111-111111111111', departmentId: '22222222-2222-4222-8222-222222222222', room: 'A 12', birthMonth: 2, birthDay: 29, birthYear: 2024, consent: true }
+  await registerPerson(db as never, details, 'staff')
+  const insert = statements.find(({ sql }) => sql.includes('INSERT INTO people'))
+  expect(insert?.params).toContain('ada@example.org')
+  expect(insert?.params).toContain('A 12')
+  expect(insert?.params).toContain(2024)
+  expect(statements.some(({ sql }) => sql.includes('INSERT INTO person_departments'))).toBe(true)
+  expect(statements.at(-1)?.sql).toBe('COMMIT')
+})
+
+it('does not save a person with an inactive or missing compound', async () => {
+  const statements: string[] = []
+  const client = { query: async (sql: string) => {
+    statements.push(sql)
+    return { rows: [] }
+  }, release: () => {} }
+  const db = { query: async () => ({ rows: [] }), connect: async () => client }
+  await expect(registerPerson(db as never, {
+    firstName: 'Ada', lastName: 'Okafor', email: 'ada@example.org',
+    compoundId: '11111111-1111-4111-8111-111111111111',
+    birthMonth: 2, birthDay: 29, consent: true,
+  }, 'staff')).rejects.toThrow('Choose an active compound')
+  expect(statements).toContain('ROLLBACK')
+  expect(statements.some((sql) => sql.includes('INSERT INTO people'))).toBe(false)
+})
+
 it('masks ordinary directory phones even for administrators and pastors', async () => {
   const db = { query: async () => ({ rows: [{ id: 'person', phone_e164: '+2348031234592', total_count: 1 }] }) }
   for (const role of ['ADMIN', 'PASTOR_VIEWER', 'REGISTRATION_DESK'] as const) {

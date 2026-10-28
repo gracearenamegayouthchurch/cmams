@@ -28,6 +28,7 @@ const access: Record<Staff['role'], string[]> = {
     'Cards',
     'Reports',
     'Staff',
+    'Catalogs',
   ],
   PASTOR_VIEWER: ['Dashboard', 'Members', 'Reports'],
 }

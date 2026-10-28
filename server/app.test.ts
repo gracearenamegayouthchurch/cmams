@@ -12,6 +12,22 @@ afterEach(() => {
 })
 
 describe('API boundary', () => {
+  it('allows registration staff to read choices but not change the catalog', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
+      ? [{ id: 'staff', full_name: 'Desk', email: 'desk@example.com', role: 'REGISTRATION_DESK', session_version: 0 }]
+      : [] }))
+    const token = signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)
+    const headers = { cookie: `cmams_session=${token}`, origin: 'https://church.example' }
+    const list = await handleApi(new Request('https://church.example/api/v1/catalogs', { headers }))
+    expect(list.status).toBe(200)
+    expect(await list.json()).toEqual({ compounds: [], departments: [] })
+    const create = await handleApi(new Request('https://church.example/api/v1/catalogs/compounds', {
+      method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'North' }),
+    }))
+    expect(create.status).toBe(403)
+  })
+
   it('rejects staff listing for a supervisor and shows an admin safe staff details', async () => {
     process.env.SESSION_SECRET = secret
     let actorRole: 'SERVICE_SUPERVISOR' | 'ADMIN' = 'SERVICE_SUPERVISOR'
@@ -138,6 +154,8 @@ describe('API boundary', () => {
       query: async (sql: string) => ({
         rows: sql.includes('INSERT INTO people')
           ? [{ id: 'person', member_code: 'CM-1001' }]
+          : sql.includes('SELECT id FROM compounds')
+            ? [{ id: '11111111-1111-4111-8111-111111111111' }]
           : [],
       }),
       release: () => {},

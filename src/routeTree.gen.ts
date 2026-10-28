@@ -26,6 +26,7 @@ import { Route as AuthenticatedDirectoryIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDeskIndexRouteImport } from './routes/_authenticated/desk/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedChangePasswordIndexRouteImport } from './routes/_authenticated/change-password/index'
+import { Route as AuthenticatedCatalogsIndexRouteImport } from './routes/_authenticated/catalogs/index'
 import { Route as AuthenticatedCardsIndexRouteImport } from './routes/_authenticated/cards/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -118,6 +119,12 @@ const AuthenticatedChangePasswordIndexRoute =
     path: '/change-password/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedCatalogsIndexRoute =
+  AuthenticatedCatalogsIndexRouteImport.update({
+    id: '/catalogs/',
+    path: '/catalogs/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCardsIndexRoute = AuthenticatedCardsIndexRouteImport.update({
   id: '/cards/',
   path: '/cards/',
@@ -133,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/cards/': typeof AuthenticatedCardsIndexRoute
+  '/catalogs/': typeof AuthenticatedCatalogsIndexRoute
   '/change-password/': typeof AuthenticatedChangePasswordIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/desk/': typeof AuthenticatedDeskIndexRoute
@@ -152,6 +160,7 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
   '/cards': typeof AuthenticatedCardsIndexRoute
+  '/catalogs': typeof AuthenticatedCatalogsIndexRoute
   '/change-password': typeof AuthenticatedChangePasswordIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/desk': typeof AuthenticatedDeskIndexRoute
@@ -173,6 +182,7 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/cards/': typeof AuthenticatedCardsIndexRoute
+  '/_authenticated/catalogs/': typeof AuthenticatedCatalogsIndexRoute
   '/_authenticated/change-password/': typeof AuthenticatedChangePasswordIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/desk/': typeof AuthenticatedDeskIndexRoute
@@ -194,6 +204,7 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/cards/'
+    | '/catalogs/'
     | '/change-password/'
     | '/dashboard/'
     | '/desk/'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/503'
     | '/'
     | '/cards'
+    | '/catalogs'
     | '/change-password'
     | '/dashboard'
     | '/desk'
@@ -233,6 +245,7 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/'
     | '/_authenticated/cards/'
+    | '/_authenticated/catalogs/'
     | '/_authenticated/change-password/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/desk/'
@@ -375,6 +388,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChangePasswordIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/catalogs/': {
+      id: '/_authenticated/catalogs/'
+      path: '/catalogs'
+      fullPath: '/catalogs/'
+      preLoaderRoute: typeof AuthenticatedCatalogsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/cards/': {
       id: '/_authenticated/cards/'
       path: '/cards'
@@ -388,6 +408,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedCardsIndexRoute: typeof AuthenticatedCardsIndexRoute
+  AuthenticatedCatalogsIndexRoute: typeof AuthenticatedCatalogsIndexRoute
   AuthenticatedChangePasswordIndexRoute: typeof AuthenticatedChangePasswordIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDeskIndexRoute: typeof AuthenticatedDeskIndexRoute
@@ -402,6 +423,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedCardsIndexRoute: AuthenticatedCardsIndexRoute,
+  AuthenticatedCatalogsIndexRoute: AuthenticatedCatalogsIndexRoute,
   AuthenticatedChangePasswordIndexRoute: AuthenticatedChangePasswordIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDeskIndexRoute: AuthenticatedDeskIndexRoute,

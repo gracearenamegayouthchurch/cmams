@@ -14,6 +14,13 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { CardDownloads } from './cards'
 import { formatStage, stageBadgeClass } from './format'
 import { ChurchPage } from './pages'
@@ -24,6 +31,13 @@ export function DeskPage() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [compoundId, setCompoundId] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
+  const [room, setRoom] = useState('')
+  const [birthMonth, setBirthMonth] = useState('')
+  const [birthDay, setBirthDay] = useState('')
+  const [birthYear, setBirthYear] = useState('')
   const [consent, setConsent] = useState(false)
   const [candidates, setCandidates] = useState<Person[]>([])
   const [confirmed, setConfirmed] = useState(false)
@@ -38,6 +52,14 @@ export function DeskPage() {
   const services = useQuery({
     queryKey: ['services'],
     queryFn: () => api<{ services: Service[] }>('/api/v1/services'),
+  })
+  const catalogs = useQuery({
+    queryKey: ['registration-catalogs'],
+    queryFn: () =>
+      api<{
+        compounds: { id: string; name: string }[]
+        departments: { id: string; name: string }[]
+      }>('/api/v1/catalogs'),
   })
   const activeId =
     serviceId ||
@@ -63,6 +85,7 @@ export function DeskPage() {
           body: JSON.stringify({
             fullName: `${firstName} ${lastName}`,
             phone: phone || null,
+            email: email.trim() || null,
           }),
         }
       )
@@ -86,6 +109,10 @@ export function DeskPage() {
     event.preventDefault()
     setError('')
     setMessage('')
+    if (!compoundId || !birthMonth || !birthDay || !email.trim()) {
+      setError('Enter email, compound, birth month and birth day.')
+      return
+    }
     setBusy(true)
     setCard(null)
     try {
@@ -95,6 +122,13 @@ export function DeskPage() {
           firstName,
           lastName,
           phone: phone || null,
+          email,
+          compoundId,
+          room: room || undefined,
+          departmentId: departmentId || undefined,
+          birthMonth: Number(birthMonth),
+          birthDay: Number(birthDay),
+          birthYear: birthYear ? Number(birthYear) : undefined,
           consent,
           confirmDistinct: confirmed,
           ...(householdId ? { householdId } : {}),
@@ -255,6 +289,142 @@ export function DeskPage() {
                 </p>
               </div>
 
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='email'>Email</Label>
+                  <Input
+                    id='email'
+                    type='email'
+                    required
+                    maxLength={254}
+                    value={email}
+                    onChange={(event) => {
+                      setEmail(event.target.value)
+                      setCandidates([])
+                      setConfirmed(false)
+                    }}
+                  />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='compound'>Compound</Label>
+                  <Select
+                    value={compoundId}
+                    onValueChange={(value) => {
+                      setCompoundId(value)
+                      setCandidates([])
+                      setConfirmed(false)
+                    }}
+                  >
+                    <SelectTrigger id='compound' className='w-full'>
+                      <SelectValue placeholder='Select compound' />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {catalogs.data?.compounds.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {catalogs.isPending && (
+                <p role='status' className='text-sm text-muted-foreground'>
+                  Loading registration choices…
+                </p>
+              )}
+              {catalogs.error && (
+                <p role='alert' className='text-sm text-destructive'>
+                  Could not load compounds and departments. Retry by refreshing
+                  this page.
+                </p>
+              )}
+              {catalogs.data?.compounds.length === 0 && (
+                <p role='alert' className='text-sm text-destructive'>
+                  No active compound is available. Ask an Admin to add one
+                  before registering.
+                </p>
+              )}
+
+              <div className='grid gap-4 sm:grid-cols-3'>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='birth-month'>Birth month</Label>
+                  <Select value={birthMonth} onValueChange={setBirthMonth}>
+                    <SelectTrigger id='birth-month' className='w-full'>
+                      <SelectValue placeholder='Month' />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 12 }, (_, index) => (
+                        <SelectItem key={index + 1} value={String(index + 1)}>
+                          {new Date(2000, index).toLocaleString('en', {
+                            month: 'long',
+                          })}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='birth-day'>Birth day</Label>
+                  <Input
+                    id='birth-day'
+                    type='number'
+                    min={1}
+                    max={31}
+                    required
+                    value={birthDay}
+                    onChange={(event) => setBirthDay(event.target.value)}
+                    placeholder='Day'
+                  />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='birth-year'>Birth year (optional)</Label>
+                  <Input
+                    id='birth-year'
+                    type='number'
+                    min={1900}
+                    max={new Date().getFullYear()}
+                    value={birthYear}
+                    onChange={(event) => setBirthYear(event.target.value)}
+                    placeholder='Leave blank'
+                  />
+                </div>
+              </div>
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='room'>Room (optional)</Label>
+                  <Input
+                    id='room'
+                    maxLength={100}
+                    value={room}
+                    onChange={(event) => setRoom(event.target.value)}
+                  />
+                </div>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='department'>
+                    Active department (optional)
+                  </Label>
+                  <Select
+                    value={departmentId || 'none'}
+                    onValueChange={(value) =>
+                      setDepartmentId(value === 'none' ? '' : value)
+                    }
+                  >
+                    <SelectTrigger id='department' className='w-full'>
+                      <SelectValue placeholder='No department' />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='none'>No department</SelectItem>
+                      {catalogs.data?.departments.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div>
                 <Button
                   variant='outline'
@@ -271,8 +441,10 @@ export function DeskPage() {
               <div className='rounded-xl border bg-muted/30 p-4 text-sm'>
                 <p className='font-medium text-foreground'>Privacy notice</p>
                 <p className='mt-1 text-xs leading-relaxed text-muted-foreground'>
-                  Grace Arena stores your name, optional phone number, and
-                  service attendance for church records and pastoral follow-up.
+                  Grace Arena stores your name, email, compound, room (if
+                  given), birthday (year optional), department (if given), phone
+                  (if given), and service attendance for church records and
+                  pastoral follow-up.
                 </p>
                 <div className='mt-3 flex items-start gap-2.5'>
                   <Checkbox
@@ -311,7 +483,12 @@ export function DeskPage() {
                 type='submit'
                 className='w-full sm:w-auto'
                 disabled={
-                  busy || !consent || (candidates.length > 0 && !confirmed)
+                  busy ||
+                  !consent ||
+                  catalogs.isPending ||
+                  !!catalogs.error ||
+                  !catalogs.data?.compounds.length ||
+                  (candidates.length > 0 && !confirmed)
                 }
               >
                 {busy ? 'Saving…' : 'Register person'}
