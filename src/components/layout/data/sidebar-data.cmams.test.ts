@@ -10,6 +10,7 @@ describe('CMAMS navigation', () => {
       'Dashboard',
       'Scan',
       'Registration',
+      'Cells',
       'Members',
       'Services',
       'Cards',

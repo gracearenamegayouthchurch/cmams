@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/cmams-api'
 import { ThemeProvider } from '@/context/theme-provider'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { CardDownloads, CardsPage } from './cards'
+import { CellsPage } from './cells'
 import { DashboardPage } from './dashboard'
 import { DeskPage } from './desk'
 import { DirectoryPage } from './directory'
@@ -80,6 +81,124 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('CMAMS browser workflows', () => {
+  it('lets an Admin create a named cell group', async () => {
+    const sent: { path: string; body: string | null | undefined }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input)
+        if (path === '/api/v1/session')
+          return jsonResponse({
+            staff: {
+              id: 'admin',
+              role: 'ADMIN',
+              full_name: 'Admin',
+              email: 'admin@example.org',
+            },
+          })
+        if (path === '/api/v1/cells' && init?.method === 'POST') {
+          sent.push({ path, body: init.body as string })
+          return jsonResponse(
+            {
+              cell: {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'North Cell',
+                meeting_location: 'Hall A',
+                is_active: true,
+              },
+            },
+            201
+          )
+        }
+        if (path === '/api/v1/cells') return jsonResponse({ cells: [] })
+        if (path === '/api/v1/cell-leaders')
+          return jsonResponse({ leaders: [] })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<CellsPage />)
+    await userEvent.type(screen.getByLabelText('Cell name'), 'North Cell')
+    await userEvent.type(
+      screen.getByLabelText('Saturday meeting location'),
+      'Hall A'
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Create cell' }))
+    await expect.element(screen.getByText('Cell created.')).toBeVisible()
+    expect(JSON.parse(sent[0].body ?? '{}')).toEqual({
+      name: 'North Cell',
+      location: 'Hall A',
+    })
+  })
+
+  it('shows a cell leader only their cell members and Saturday attendance', async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input)
+        calls.push(path)
+        if (path === '/api/v1/session')
+          return jsonResponse({
+            staff: {
+              id: 'leader',
+              role: 'CELL_LEADER',
+              full_name: 'Leader',
+              email: 'leader@example.org',
+            },
+          })
+        if (path === '/api/v1/cells')
+          return jsonResponse({
+            cells: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'North Cell',
+                meeting_location: 'Hall A',
+                is_active: true,
+              },
+            ],
+          })
+        if (path.endsWith('/members'))
+          return jsonResponse({
+            members: [
+              {
+                id: 'person',
+                member_code: 'CM-1010',
+                first_name: 'Ada',
+                middle_name: null,
+                last_name: 'Okafor',
+                email: 'ada@example.org',
+                phone_e164: '+2348000000000',
+                compound_name: 'East',
+                room: 'D4',
+                birth_day: 6,
+                birth_month: 5,
+                birth_year: null,
+                department_name: 'Choir',
+              },
+            ],
+          })
+        if (path.endsWith('/meetings')) return jsonResponse({ meetings: [] })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<CellsPage />)
+    await expect.element(screen.getByText(/ada@example.org/)).toBeVisible()
+    await expect
+      .element(screen.getByText(/church-service attendance is not included/i))
+      .toBeVisible()
+    expect(
+      calls.some(
+        (path) =>
+          path.startsWith('/api/v1/people') ||
+          path.startsWith('/api/v1/services') ||
+          path === '/api/v1/cell-leaders'
+      )
+    ).toBe(false)
+    expect(
+      screen.getByRole('button', { name: 'Create cell' }).query()
+    ).toBeNull()
+  })
+
   it('shows required registration details and an optional birth year', async () => {
     vi.stubGlobal(
       'fetch',

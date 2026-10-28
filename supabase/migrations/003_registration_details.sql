@@ -4,6 +4,9 @@ ALTER TABLE people
   ADD COLUMN room text,
   ADD COLUMN birth_year smallint CHECK (birth_year BETWEEN 1900 AND 2100);
 
+CREATE INDEX people_email_lower ON people (lower(email))
+  WHERE deleted_at IS NULL AND email IS NOT NULL;
+
 -- Inspect existing current associations before enforcing one department per person.
 DO $$
 BEGIN

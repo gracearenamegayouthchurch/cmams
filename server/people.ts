@@ -16,6 +16,7 @@ const registration = z.object({
   compoundId: z.uuid(),
   room: z.string().trim().max(100).optional(),
   departmentId: z.uuid().optional(),
+  cellId: z.uuid().optional(),
   birthMonth: z.number().int().min(1).max(12),
   birthDay: z.number().int().min(1).max(31),
   birthYear: z.number().int().min(1900).max(new Date().getFullYear()).optional(),
@@ -95,6 +96,13 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
       )
       if (!department.rows.length) throw new InvalidCatalogSelection()
     }
+    if (data.cellId) {
+      const cell = await client.query(
+        'SELECT id FROM cells WHERE id=$1 AND is_active=true FOR SHARE',
+        [data.cellId]
+      )
+      if (!cell.rows.length) throw new InvalidCatalogSelection()
+    }
     const created = await client.query(
       `INSERT INTO people(first_name,middle_name,last_name,phone_e164,household_id,privacy_consent_at,registered_by_staff_id,
         email,compound_id,room,birth_month,birth_day,birth_year)
@@ -121,6 +129,13 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
         `INSERT INTO person_departments(person_id,department_id,assigned_by_staff_id)
          VALUES($1,$2,$3)`,
         [person.id, data.departmentId, staffId]
+      )
+    }
+    if (data.cellId) {
+      await client.query(
+        `INSERT INTO cell_memberships(cell_id,person_id,assigned_by_staff_id)
+         VALUES($1,$2,$3)`,
+        [data.cellId, person.id, staffId]
       )
     }
     await client.query(

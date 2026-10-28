@@ -30,8 +30,9 @@ const access: Record<Staff['role'], string[]> = {
     'Reports',
     'Staff',
     'Catalogs',
+    'Cells',
   ],
-  PASTOR_VIEWER: ['Dashboard', 'Members', 'Reports'],
+  PASTOR_VIEWER: ['Dashboard', 'Members', 'Reports', 'Cells'],
   CELL_LEADER: ['Cells'],
 }
 

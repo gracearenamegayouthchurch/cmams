@@ -34,6 +34,7 @@ export function DeskPage() {
   const [email, setEmail] = useState('')
   const [compoundId, setCompoundId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
+  const [cellId, setCellId] = useState('')
   const [room, setRoom] = useState('')
   const [birthMonth, setBirthMonth] = useState('')
   const [birthDay, setBirthDay] = useState('')
@@ -60,6 +61,11 @@ export function DeskPage() {
         compounds: { id: string; name: string }[]
         departments: { id: string; name: string }[]
       }>('/api/v1/catalogs'),
+  })
+  const cells = useQuery({
+    queryKey: ['cells'],
+    queryFn: () =>
+      api<{ cells: { id: string; name: string }[] }>('/api/v1/cells'),
   })
   const activeId =
     serviceId ||
@@ -140,6 +146,7 @@ export function DeskPage() {
           compoundId,
           room: room || undefined,
           departmentId: departmentId || undefined,
+          cellId: cellId || undefined,
           birthMonth: Number(birthMonth),
           birthDay: Number(birthDay),
           birthYear: birthYear ? Number(birthYear) : undefined,
@@ -439,6 +446,34 @@ export function DeskPage() {
                 </div>
               </div>
 
+              <div className='space-y-1.5'>
+                <Label htmlFor='cell'>Cell group (optional)</Label>
+                <Select
+                  value={cellId || 'none'}
+                  onValueChange={(value) =>
+                    setCellId(value === 'none' ? '' : value)
+                  }
+                >
+                  <SelectTrigger id='cell' className='w-full'>
+                    <SelectValue placeholder='No cell group' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='none'>No cell group</SelectItem>
+                    {(cells.data?.cells ?? []).map((cell) => (
+                      <SelectItem key={cell.id} value={cell.id}>
+                        {cell.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {cells.error && (
+                  <p role='alert' className='text-sm text-destructive'>
+                    Cell choices could not load. Refresh before assigning a
+                    cell.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <Button
                   variant='outline'
@@ -457,8 +492,10 @@ export function DeskPage() {
                 <p className='mt-1 text-xs leading-relaxed text-muted-foreground'>
                   Grace Arena stores your name, email, compound, room (if
                   given), birthday (year optional), department (if given), phone
-                  (if given), and service attendance for church records and
-                  pastoral follow-up.
+                  (if given), cell group (if joined), church-service and
+                  Saturday cell attendance for church records and pastoral
+                  follow-up. Cell leaders may view the full profile of members
+                  in their cell, but not church-service attendance history.
                 </p>
                 <div className='mt-3 flex items-start gap-2.5'>
                   <Checkbox

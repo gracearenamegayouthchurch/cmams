@@ -38,7 +38,19 @@ export async function listCells(db: Pick<Db, 'query'>, actor: CellActor) {
   }
   if (actor.role !== 'ADMIN' && actor.role !== 'PASTOR_VIEWER' && actor.role !== 'REGISTRATION_DESK' && actor.role !== 'SERVICE_SUPERVISOR') throw new CellAccessError()
   const result = await db.query(
-    'SELECT id,name,meeting_location,is_active FROM cells WHERE is_active=true ORDER BY name'
+    actor.role === 'ADMIN' || actor.role === 'PASTOR_VIEWER'
+      ? 'SELECT id,name,meeting_location,is_active FROM cells ORDER BY is_active DESC,name'
+      : 'SELECT id,name,meeting_location,is_active FROM cells WHERE is_active=true ORDER BY name'
+  )
+  return result.rows
+}
+
+export async function listCellLeaders(db: Pick<Db, 'query'>, actor: CellActor) {
+  manager(actor)
+  const result = await db.query(
+    `SELECT s.id,s.full_name,a.cell_id FROM staff_users s
+     LEFT JOIN cell_leader_assignments a ON a.staff_id=s.id AND a.valid_to IS NULL
+     WHERE s.role='CELL_LEADER' AND s.is_active=true ORDER BY s.full_name`
   )
   return result.rows
 }
@@ -78,6 +90,31 @@ export async function createCell(db: Db, input: unknown, actor: CellActor) {
     await client.query(
       `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
        VALUES($1,'CELL_CREATED','cell',$2)`, [actor.id, result.rows[0].id]
+    )
+    await client.query('COMMIT')
+    return result.rows[0]
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
+}
+
+export async function updateCell(db: Db, cellId: string, input: unknown, actor: CellActor) {
+  manager(actor)
+  const id = z.uuid().parse(cellId)
+  const data = cellFields.parse(input)
+  const client = await db.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query(
+      `UPDATE cells SET name=$2,meeting_location=$3,updated_at=now()
+       WHERE id=$1 AND is_active=true RETURNING id,name,meeting_location,is_active`,
+      [id, data.name, data.location]
+    )
+    if (!result.rows.length) throw new CellAccessError()
+    await client.query(
+      `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
+       VALUES($1,'CELL_UPDATED','cell',$2)`, [actor.id, id]
     )
     await client.query('COMMIT')
     return result.rows[0]

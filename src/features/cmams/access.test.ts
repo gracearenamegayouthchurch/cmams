@@ -7,6 +7,7 @@ it('shows an usher only the scan operation', () => {
     'Dashboard',
     'Members',
     'Reports',
+    'Cells',
   ])
 })
 

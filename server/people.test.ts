@@ -69,6 +69,25 @@ it('stores new registration fields and one active department in the same transac
   expect(statements.at(-1)?.sql).toBe('COMMIT')
 })
 
+it('checks the optional active cell and saves membership atomically with registration', async () => {
+  const queries: { sql: string; params?: unknown[] }[] = []
+  const cellId = '33333333-3333-4333-8333-333333333333'
+  const client = {
+    query: async (sql: string, params?: unknown[]) => {
+      queries.push({ sql, params })
+      return { rows: [{ id: 'person' }] }
+    }, release: () => {},
+  }
+  const db = { query: async () => ({ rows: [] }), connect: async () => client }
+  await registerPerson(db as never, {
+    firstName: 'Ada', lastName: 'Okafor', email: 'ada@example.org', compoundId: '11111111-1111-4111-8111-111111111111',
+    cellId, birthMonth: 2, birthDay: 29, consent: true,
+  }, 'staff')
+  expect(queries.find(({ sql }) => sql.includes('FROM cells'))?.params).toEqual([cellId])
+  expect(queries.find(({ sql }) => sql.includes('INSERT INTO cell_memberships'))?.params).toEqual([cellId, 'person', 'staff'])
+  expect(queries.at(-1)?.sql).toBe('COMMIT')
+})
+
 it('does not save a person with an inactive or missing compound', async () => {
   const statements: string[] = []
   const client = { query: async (sql: string) => {

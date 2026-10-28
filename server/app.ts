@@ -24,7 +24,8 @@ import {
 } from './services.js'
 import { IdempotencyConflict, manualCheckin, scanCard } from './checkins.js'
 import { createCatalogEntry, deactivateCatalogEntry, listActiveCatalogs, renameCatalogEntry } from './catalogs.js'
-import { archiveCell, assignLeader, assignMember, CellAccessError, createCell, listCellMembers, listCells } from './cells.js'
+import { archiveCell, assignLeader, assignMember, CellAccessError, createCell, listCellLeaders, listCellMembers, listCells, updateCell } from './cells.js'
+import { CellMeetingError, createCellMeeting, listCellMeetingAttendance, listCellMeetings, scanCellCard, transitionCellMeeting } from './cell-meetings.js'
 import { StaffError, changeOwnPassword, createStaff, listStaff, resetStaffPassword, updateStaff } from './staff.js'
 import {
   absenteeList,
@@ -367,8 +368,13 @@ export async function handleApi(request: Request): Promise<Response> {
 
     if (path === '/api/v1/cells' && method === 'GET')
       return json({ cells: await listCells(getDb(), staff) })
+    if (path === '/api/v1/cell-leaders' && method === 'GET')
+      return json({ leaders: await listCellLeaders(getDb(), staff) })
     if (path === '/api/v1/cells' && method === 'POST')
       return json({ cell: await createCell(getDb(), await request.json(), staff) }, 201)
+    const cellEdit = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})$/i)
+    if (cellEdit && method === 'PATCH')
+      return json({ cell: await updateCell(getDb(), cellEdit[1], await request.json(), staff) })
     const cellMembers = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})\/members$/i)
     if (cellMembers && method === 'GET')
       return json({ members: await listCellMembers(getDb(), staff, cellMembers[1]) })
@@ -387,6 +393,21 @@ export async function handleApi(request: Request): Promise<Response> {
     if (cellArchive && method === 'POST') {
       await archiveCell(getDb(), cellArchive[1], staff)
       return json({ ok: true })
+    }
+    const cellMeetings = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})\/meetings$/i)
+    if (cellMeetings && method === 'GET')
+      return json({ meetings: await listCellMeetings(getDb(), cellMeetings[1], staff) })
+    if (cellMeetings && method === 'POST')
+      return json({ meeting: await createCellMeeting(getDb(), cellMeetings[1], await request.json(), staff) }, 201)
+    const cellAction = path.match(/^\/api\/v1\/cell-meetings\/([0-9a-f-]{36})\/(open|close|check-ins)$/i)
+    const cellAttendance = path.match(/^\/api\/v1\/cell-meetings\/([0-9a-f-]{36})\/attendance$/i)
+    if (cellAttendance && method === 'GET')
+      return json({ attendance: await listCellMeetingAttendance(getDb(), cellAttendance[1], staff) })
+    if (cellAction && method === 'POST') {
+      if (cellAction[2] !== 'check-ins')
+        return json({ meeting: await transitionCellMeeting(getDb(), cellAction[1], cellAction[2] as 'open' | 'close', staff) })
+      const body = z.object({ credential: z.string().min(6).max(200), eventId: z.uuid() }).parse(await request.json())
+      return json(await scanCellCard(getDb(), cellAction[1], body.credential, body.eventId, staff))
     }
     if (path === '/api/v1/catalogs' && method === 'GET') {
       if (!allow(staff.role, 'register') && !allow(staff.role, 'directory'))
@@ -462,8 +483,9 @@ export async function handleApi(request: Request): Promise<Response> {
     return json({ error: 'Endpoint not implemented' }, 501)
   } catch (error) {
     if (error instanceof CellAccessError) return json({ error: error.message }, 403)
+    if (error instanceof CellMeetingError) return json({ error: error.message }, error.status)
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505')
-      return json({ error: 'An entry with that name already exists' }, 409)
+      return json({ error: path.startsWith('/api/v1/catalogs/') || path === '/api/v1/cells' ? 'An entry with that name already exists' : 'Conflicting request; please retry or review existing records' }, 409)
     if (error instanceof InvalidCatalogSelection) return json({ error: error.message }, 400)
     if (error instanceof StaffError) return json({ error: error.message }, error.status)
     if (error instanceof DuplicatePersonError)
