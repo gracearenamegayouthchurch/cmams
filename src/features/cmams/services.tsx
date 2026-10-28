@@ -285,7 +285,7 @@ export function ServicesPage() {
           />
           {services.data?.services.map((service) => (
             <Card key={service.id}>
-              <CardContent className='flex flex-wrap items-center justify-between gap-4 pt-6'>
+              <CardContent className='flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between'>
                 <div className='space-y-1.5'>
                   <div className='flex flex-wrap items-center gap-2.5'>
                     <h3 className='font-semibold'>{service.name}</h3>
@@ -317,9 +317,9 @@ export function ServicesPage() {
                     )}
                   </p>
                 </div>
-                <div className='flex gap-2'>
+                <div className='flex flex-wrap gap-2'>
                   {service.status === 'SCHEDULED' && (
-                    <div className='space-y-1 text-right'>
+                    <div className='space-y-1.5 sm:text-right'>
                       <Button
                         size='sm'
                         disabled={
@@ -340,13 +340,13 @@ export function ServicesPage() {
                         Open check-in
                       </Button>
                       {now < Date.parse(service.checkin_opens_at) && (
-                        <p className='max-w-48 text-xs text-muted-foreground'>
+                        <p className='text-xs text-muted-foreground sm:max-w-48'>
                           Check-in opens on{' '}
                           {formatDateTime(service.checkin_opens_at)}.
                         </p>
                       )}
                       {now > Date.parse(service.checkin_closes_at) && (
-                        <p className='max-w-48 text-xs text-muted-foreground'>
+                        <p className='text-xs text-muted-foreground sm:max-w-48'>
                           This check-in window ended on{' '}
                           {formatDateTime(service.checkin_closes_at)}. Schedule
                           a new service to check in arrivals.
