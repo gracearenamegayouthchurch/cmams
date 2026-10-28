@@ -485,7 +485,7 @@ describe('CMAMS browser workflows', () => {
       .element(screen.getByLabelText('New member'))
       .toHaveAttribute('aria-checked', 'true')
     await userEvent.click(screen.getByLabelText('Existing member'))
-    await userEvent.type(screen.getByLabelText('Search members'), 'Ada')
+    await userEvent.type(screen.getByLabelText('Search members by name, phone or code'), 'Ada')
     await expect.element(screen.getByText('CM-1001')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
     await expect.element(screen.getByText('Check-ins')).toBeVisible()
@@ -497,6 +497,34 @@ describe('CMAMS browser workflows', () => {
     await expect
       .element(screen.getByText('Ada Okafor — checked in.'))
       .toBeVisible()
+  })
+
+  it('looks up a shared phone at the registration desk without checking in on selection', async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        calls.push(url)
+        if (url.startsWith('/api/v1/people?'))
+          return jsonResponse({
+            people: [
+              { id: 'ada', first_name: 'Ada', last_name: 'Okafor', member_code: 'CM-1001', phone: '+234803*****92', lifecycle_stage: 'MEMBER' },
+              { id: 'bola', first_name: 'Bola', last_name: 'Okafor', member_code: 'CM-1002', phone: '+234803*****92', lifecycle_stage: 'MEMBER' },
+            ],
+          })
+        if (url === '/api/v1/services') return jsonResponse({ services: [] })
+        return jsonResponse({ compounds: [], departments: [], regions: [], cells: [] })
+      })
+    )
+    const screen = await renderWithShell(<DeskPage />)
+    await userEvent.click(screen.getByLabelText('Existing member'))
+    await userEvent.type(screen.getByLabelText('Search members by name, phone or code'), '0803 123 4592')
+    await expect.element(screen.getByText('CM-1001')).toBeVisible()
+    await expect.element(screen.getByText('CM-1002')).toBeVisible()
+    expect(calls.some((path) => path.includes('q=0803%20123%204592'))).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
+    expect(calls.some((path) => path.includes('/manual-check-ins'))).toBe(false)
   })
 
   it('supports shortcode fallback on mobile layout and never reports offline errors as success', async () => {

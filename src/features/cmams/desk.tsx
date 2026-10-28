@@ -736,7 +736,7 @@ export function DeskPage() {
             ) : (
               <div className='space-y-4'>
                 <div className='space-y-1.5'>
-                  <Label htmlFor='member-search'>Search members</Label>
+                  <Label htmlFor='member-search'>Search members by name, phone or code</Label>
                   <div className='relative'>
                     <Search
                       className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground'
@@ -751,17 +751,17 @@ export function DeskPage() {
                         setMemberSearch(event.target.value)
                         setSelectedMember(null)
                       }}
-                      placeholder='Name or code (e.g. Ada or CM-1001)'
+                      placeholder='Name, phone or code'
                     />
                   </div>
                   <p className='text-xs text-muted-foreground'>
-                    Search existing profiles before creating a new record.
+                    Search by name, phone number or member code before creating a new record.
                   </p>
                 </div>
 
                 {memberSearch.trim().length === 0 ? (
                   <p className='text-sm text-muted-foreground'>
-                    Start typing a name or member code.
+                    Start typing a name, phone number or member code.
                   </p>
                 ) : memberSearchPending ? (
                   <p role='status' className='text-sm text-muted-foreground'>
