@@ -342,7 +342,7 @@ it('searches shared phones in both paginated results and empty-page totals witho
     '0803 123-4592'
   )
   expect(result.total).toBe(2)
-  expect(result.people.map((person) => person.id)).toEqual(['ada', 'bola'])
+  expect(result.people).toMatchObject([{ id: 'ada' }, { id: 'bola' }])
   expect(result.people.every((person) => person.phone === '+234803*****92')).toBe(true)
   expect(result.people[0]).not.toHaveProperty('phone_e164')
   expect(calls[0].sql).toMatch(/phone_e164.*\$5/s)

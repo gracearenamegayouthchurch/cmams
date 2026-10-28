@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BrowserQRCodeReader } from '@zxing/browser'
 import {
   AlertTriangle,
@@ -14,7 +14,7 @@ import {
 import { api } from '@/lib/cmams-api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { describeScanOutcome } from './format'
@@ -22,7 +22,8 @@ import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { createScanLock } from './scan-lock'
 import { ServicePicker } from './service-picker'
-import { type Service } from './types'
+import { type PaginatedPeople, type Person, type Service } from './types'
+import { useDebouncedValue } from './use-debounced-value'
 
 type Outcome = {
   outcome: string
@@ -53,6 +54,7 @@ function signal(outcome: string) {
 }
 
 export function ScanPage() {
+  const queryClient = useQueryClient()
   const services = useQuery({
     queryKey: ['services'],
     queryFn: () => api<{ services: Service[] }>('/api/v1/services'),
@@ -64,6 +66,17 @@ export function ScanPage() {
   const [status, setStatus] = useState<Outcome | null>(null)
   const [recent, setRecent] = useState<RecentScan[]>([])
   const [busy, setBusy] = useState(false)
+  const [memberSearch, setMemberSearch] = useState('')
+  const [selectedMember, setSelectedMember] = useState<Person | null>(null)
+  const [manualReason, setManualReason] = useState('')
+  const debouncedSearch = useDebouncedValue(memberSearch)
+  const memberResults = useQuery({
+    queryKey: ['scan-people', debouncedSearch],
+    queryFn: () => api<PaginatedPeople>(
+      `/api/v1/people?q=${encodeURIComponent(debouncedSearch)}&page=1&pageSize=10`
+    ),
+    enabled: debouncedSearch.trim().length > 0,
+  })
   const inFlight = useRef(false)
   const video = useRef<HTMLVideoElement>(null)
   const cooldown = useRef(createScanLock())
@@ -222,6 +235,47 @@ export function ScanPage() {
     }
   }
 
+  async function manualCheckin(event: FormEvent) {
+    event.preventDefault()
+    if (!selectedMember || !activeId || manualReason.trim().length < 3 || busy)
+      return
+    setBusy(true)
+    setStatus(null)
+    try {
+      const response = await api<Outcome>(
+        `/api/v1/services/${activeId}/manual-check-ins`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            personId: selectedMember.id,
+            eventId: crypto.randomUUID(),
+            reason: manualReason.trim(),
+          }),
+        }
+      )
+      setStatus({
+        ...response,
+        ...(response.outcome === 'CHECKED_IN' || response.outcome === 'ALREADY_CHECKED_IN'
+          ? { person: {
+              full_name: `${selectedMember.first_name} ${selectedMember.last_name}`,
+              member_code: selectedMember.member_code,
+            } }
+          : {}),
+      })
+      if (response.outcome === 'CHECKED_IN') {
+        setManualReason('')
+        await queryClient.invalidateQueries({ queryKey: ['scan-people'] })
+      }
+    } catch (error) {
+      setStatus({
+        outcome: 'NETWORK_ERROR',
+        message: error instanceof Error ? error.message : 'Check-in failed. Try again.',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const good = status?.outcome === 'CHECKED_IN'
   const duplicate = status?.outcome === 'ALREADY_CHECKED_IN'
   const statusCopy = status
@@ -231,7 +285,7 @@ export function ScanPage() {
   return (
     <ChurchPage
       title='Check-in'
-      description='Scan a member QR card or enter its 6-character code.'
+      description='Scan a member QR card, enter its code, or find a member who forgot their card.'
     >
       <div className='max-w-3xl space-y-6'>
         <QueryState
@@ -410,6 +464,79 @@ export function ScanPage() {
                 </p>
               </form>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Forgot QR card? Search by name or phone</CardTitle>
+            <CardDescription>
+              Choose the correct profile, then enter a reason for manual check-in.
+              Family members may share a phone number.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className='space-y-4'>
+            <div className='space-y-1.5'>
+              <Label htmlFor='scan-member-search'>Search by name or phone</Label>
+              <Input
+                id='scan-member-search'
+                value={memberSearch}
+                autoComplete='off'
+                placeholder='Name, phone number or member code'
+                onChange={(event) => {
+                  setMemberSearch(event.target.value)
+                  setSelectedMember(null)
+                  setStatus(null)
+                }}
+              />
+            </div>
+            {memberSearch.trim() && (
+              memberSearch !== debouncedSearch || memberResults.isFetching ? (
+                <p role='status' className='text-sm text-muted-foreground'>Searching members…</p>
+              ) : memberResults.error ? (
+                <p role='alert' className='text-sm text-destructive'>Search failed. Try again.</p>
+              ) : !memberResults.data?.people.length ? (
+                <p className='text-sm text-muted-foreground'>No matching profiles found.</p>
+              ) : (
+                <div className='space-y-2'>
+                  {memberResults.data.people.map((person) => (
+                    <button
+                      key={person.id}
+                      type='button'
+                      aria-pressed={selectedMember?.id === person.id}
+                      onClick={() => {
+                        setSelectedMember(person)
+                        setStatus(null)
+                      }}
+                      className='block w-full rounded-lg border p-3 text-left text-sm hover:bg-muted/40 aria-pressed:border-primary'
+                    >
+                      <span className='font-semibold'>{person.first_name} {person.last_name}</span>
+                      <span className='ml-2 font-mono text-muted-foreground'>{person.member_code}</span>
+                      <span className='block text-xs text-muted-foreground'>Phone: {person.phone ?? 'Not provided'}</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+            {selectedMember && (
+              <form className='space-y-3' onSubmit={(event) => void manualCheckin(event)}>
+                <p className='text-sm font-medium'>Selected: {selectedMember.first_name} {selectedMember.last_name} ({selectedMember.member_code})</p>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='scan-manual-reason'>Reason for manual check-in</Label>
+                  <Input
+                    id='scan-manual-reason'
+                    maxLength={500}
+                    value={manualReason}
+                    onChange={(event) => setManualReason(event.target.value)}
+                    placeholder='Forgot QR card'
+                  />
+                </div>
+                <Button disabled={!activeId || busy || manualReason.trim().length < 3}>
+                  {busy ? 'Checking…' : 'Check in without card'}
+                </Button>
+                {!activeId && <p className='text-sm text-muted-foreground'>Open a service before checking in.</p>}
+              </form>
+            )}
           </CardContent>
         </Card>
 
