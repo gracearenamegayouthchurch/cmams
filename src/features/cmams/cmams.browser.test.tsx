@@ -403,6 +403,73 @@ describe('CMAMS browser workflows', () => {
     await expect.element(screen.getByText(/Shares phone number/)).toBeVisible()
   })
 
+  it('toggles between new and existing members and checks an existing member in', async () => {
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.startsWith('/api/v1/catalogs'))
+          return jsonResponse({ compounds: [], departments: [], regions: [] })
+        if (url.startsWith('/api/v1/cells')) return jsonResponse({ cells: [] })
+        if (url.startsWith('/api/v1/people?'))
+          return jsonResponse({
+            people: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                phone: '+234***',
+                lifecycle_stage: 'MEMBER',
+                last_attended_at: '2026-10-18T08:00:00Z',
+                attendance_count: 4,
+              },
+            ],
+            total: 1,
+            page: 1,
+            pageSize: 10,
+            totalPages: 1,
+          })
+        if (url.includes('/manual-check-ins') && init?.method === 'POST')
+          return jsonResponse({ outcome: 'CHECKED_IN' })
+        if (url.startsWith('/api/v1/services'))
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Sunday Service',
+                category: 'SUNDAY_SERVICE',
+                status: 'CHECKIN_OPEN',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+                locked_eligible_member_count: null,
+              },
+            ],
+          })
+        return jsonResponse({}, 404)
+      })
+    )
+    const screen = await renderWithShell(<DeskPage />)
+    await expect
+      .element(screen.getByLabelText('New member'))
+      .toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(screen.getByLabelText('Existing member'))
+    await userEvent.type(screen.getByLabelText('Search members'), 'Ada')
+    await expect.element(screen.getByText('CM-1001')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
+    await expect.element(screen.getByText('Check-ins')).toBeVisible()
+    await userEvent.type(
+      screen.getByLabelText('Reason for manual check-in'),
+      'No card'
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Check in' }))
+    await expect
+      .element(screen.getByText('Ada Okafor — checked in.'))
+      .toBeVisible()
+  })
+
   it('supports shortcode fallback on mobile layout and never reports offline errors as success', async () => {
     await page.viewport(390, 844)
     const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
