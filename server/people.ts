@@ -250,6 +250,14 @@ export async function listPeoplePaginated(
     ? stage
     : ''
   const offset = (page - 1) * pageSize
+  const trimmedSearch = search.trim().slice(0, 80)
+  const digits = /^[+\d\s()-]+$/.test(trimmedSearch)
+    ? trimmedSearch.replace(/\D/g, '')
+    : ''
+  const phoneSearch =
+    digits.length >= 7
+      ? digits.replace(/^0(?=\d{10}$)/, '234')
+      : ''
 
   const result = await db.query(
     `SELECT p.id,p.member_code,p.first_name,p.last_name,p.phone_e164,p.lifecycle_stage,p.registered_at,
@@ -258,11 +266,12 @@ export async function listPeoplePaginated(
       count(*) OVER()::int AS total_count
     FROM people p
     WHERE p.deleted_at IS NULL
-      AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%')
+       AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%'
+         OR ($5 <> '' AND regexp_replace(coalesce(p.phone_e164, ''), '[^0-9]', '', 'g') LIKE '%' || $5 || '%'))
       AND ($2 = '' OR p.lifecycle_stage::text = $2)
     ORDER BY p.registered_at DESC
     LIMIT $3 OFFSET $4`,
-    [search.slice(0, 80), validStage, pageSize, offset]
+    [trimmedSearch, validStage, pageSize, offset, phoneSearch]
   )
 
   const total = result.rows.length > 0
@@ -270,9 +279,10 @@ export async function listPeoplePaginated(
     : Number((await db.query(
         `SELECT count(*)::int AS total_count FROM people p
          WHERE p.deleted_at IS NULL
-           AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%')
+            AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%'
+              OR ($3 <> '' AND regexp_replace(coalesce(p.phone_e164, ''), '[^0-9]', '', 'g') LIKE '%' || $3 || '%'))
            AND ($2 = '' OR p.lifecycle_stage::text = $2)`,
-        [search.slice(0, 80), validStage]
+        [trimmedSearch, validStage, phoneSearch]
       )).rows[0].total_count)
   const people = result.rows.map(
     ({

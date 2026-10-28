@@ -321,6 +321,48 @@ it('masks ordinary directory phones even for administrators and pastors', async 
   }
 })
 
+it('searches shared phones in both paginated results and empty-page totals without exposing the number', async () => {
+  const calls: { sql: string; params: unknown[] }[] = []
+  const db = {
+    query: async (sql: string, params: unknown[]) => {
+      calls.push({ sql, params })
+      return {
+        rows: sql.includes('OVER()')
+          ? [
+              { id: 'ada', phone_e164: '+2348031234592', total_count: 2 },
+              { id: 'bola', phone_e164: '+2348031234592', total_count: 2 },
+            ]
+          : [{ total_count: 2 }],
+      }
+    },
+  }
+  const result = await listPeoplePaginated(
+    db as never,
+    'REGISTRATION_DESK',
+    '0803 123-4592'
+  )
+  expect(result.total).toBe(2)
+  expect(result.people.map((person) => person.id)).toEqual(['ada', 'bola'])
+  expect(result.people.every((person) => person.phone === '+234803*****92')).toBe(true)
+  expect(result.people[0]).not.toHaveProperty('phone_e164')
+  expect(calls[0].sql).toMatch(/phone_e164.*\$5/s)
+  expect(calls[0].params[4]).toBe('2348031234592')
+
+  const empty = {
+    query: async (sql: string, params: unknown[]) => {
+      calls.push({ sql, params })
+      return { rows: sql.includes('OVER()') ? [] : [{ total_count: 2 }] }
+    },
+  }
+  await listPeoplePaginated(empty as never, 'ADMIN', '+2348031234592', {
+    page: 99,
+  })
+  expect(calls.at(-1)?.sql).toMatch(/phone_e164.*\$3/s)
+  expect(calls.at(-1)?.params[2]).toBe('2348031234592')
+  await listPeoplePaginated(empty as never, 'ADMIN', 'Ada', { page: 99 })
+  expect(calls.at(-1)?.params[2]).toBe('')
+})
+
 it('returns the real total when requesting an empty page past the end', async () => {
   const db = {
     query: async (sql: string) => ({
