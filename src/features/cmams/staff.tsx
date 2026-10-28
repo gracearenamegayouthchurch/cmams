@@ -34,6 +34,7 @@ const roles: Staff['role'][] = [
   'REGISTRATION_DESK',
   'SERVICE_SUPERVISOR',
   'PASTOR_VIEWER',
+  'CELL_LEADER',
   'ADMIN',
 ]
 

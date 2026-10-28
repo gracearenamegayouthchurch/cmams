@@ -6,6 +6,7 @@ export const homeForRole: Record<Staff['role'], string> = {
   SERVICE_SUPERVISOR: '/services',
   ADMIN: '/dashboard',
   PASTOR_VIEWER: '/dashboard',
+  CELL_LEADER: '/cells',
 }
 
 const access: Record<Staff['role'], string[]> = {
@@ -31,6 +32,7 @@ const access: Record<Staff['role'], string[]> = {
     'Catalogs',
   ],
   PASTOR_VIEWER: ['Dashboard', 'Members', 'Reports'],
+  CELL_LEADER: ['Cells'],
 }
 
 export function visibleNavigation(role: Staff['role']): string[] {

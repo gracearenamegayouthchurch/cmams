@@ -113,6 +113,20 @@ export function DeskPage() {
       setError('Enter email, compound, birth month and birth day.')
       return
     }
+    const month = Number(birthMonth)
+    const day = Number(birthDay)
+    const year = birthYear ? Number(birthYear) : 2000
+    const birthday = new Date(Date.UTC(year, month - 1, day))
+    if (
+      birthday.getUTCFullYear() !== year ||
+      birthday.getUTCMonth() !== month - 1 ||
+      birthday.getUTCDate() !== day
+    ) {
+      setError(
+        'Choose a valid birth month and day; check the year if you entered one.'
+      )
+      return
+    }
     setBusy(true)
     setCard(null)
     try {

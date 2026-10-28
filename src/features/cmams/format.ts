@@ -7,6 +7,7 @@ const roleLabels: Record<Staff['role'], string> = {
   REGISTRATION_DESK: 'Registration Desk',
   USHER_SCANNER: 'Usher',
   PASTOR_VIEWER: 'Pastor',
+  CELL_LEADER: 'Cell Leader',
 }
 
 export function formatRole(role: Staff['role']): string {

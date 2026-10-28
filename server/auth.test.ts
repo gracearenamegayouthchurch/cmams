@@ -12,6 +12,16 @@ describe('staff security', () => {
     expect(allow('PASTOR_VIEWER', 'checkin')).toBe(false)
   })
 
+  it('keeps cell leaders out of global services and member reports', () => {
+    expect(allow('CELL_LEADER', 'cell_read')).toBe(true)
+    expect(allow('CELL_LEADER', 'cell_meeting')).toBe(true)
+    expect(allow('CELL_LEADER', 'directory')).toBe(false)
+    expect(allow('CELL_LEADER', 'services')).toBe(false)
+    expect(allow('CELL_LEADER', 'checkin')).toBe(false)
+    expect(allow('CELL_LEADER', 'export')).toBe(false)
+    expect(allow('PASTOR_VIEWER', 'cell_manage')).toBe(true)
+  })
+
   it('masks contact numbers for ordinary directory readers', () => {
     expect(maskPhone('+2348031234592')).toBe('+234803*****92')
   })

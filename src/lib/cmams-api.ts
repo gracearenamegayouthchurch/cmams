@@ -8,6 +8,7 @@ export type Staff = {
     | 'SERVICE_SUPERVISOR'
     | 'ADMIN'
     | 'PASTOR_VIEWER'
+    | 'CELL_LEADER'
   must_change_password?: boolean
 }
 
