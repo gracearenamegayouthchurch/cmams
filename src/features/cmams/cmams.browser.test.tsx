@@ -82,7 +82,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('CMAMS browser workflows', () => {
-  it('lets an Admin create a named cell group', async () => {
+  it('lets an Admin create a named cell group in a region', async () => {
     const sent: { path: string; body: string | null | undefined }[] = []
     vi.stubGlobal(
       'fetch',
@@ -105,6 +105,7 @@ describe('CMAMS browser workflows', () => {
                 id: '11111111-1111-4111-8111-111111111111',
                 name: 'North Cell',
                 meeting_location: 'Hall A',
+                region: 'NDAR',
                 is_active: true,
               },
             },
@@ -123,11 +124,14 @@ describe('CMAMS browser workflows', () => {
       screen.getByLabelText('Saturday meeting location'),
       'Hall A'
     )
+    await userEvent.click(screen.getByLabelText('Region'))
+    await userEvent.click(page.getByRole('option', { name: 'Ndar' }))
     await userEvent.click(screen.getByRole('button', { name: 'Create cell' }))
     await expect.element(screen.getByText('Cell created.')).toBeVisible()
     expect(JSON.parse(sent[0].body ?? '{}')).toEqual({
       name: 'North Cell',
       location: 'Hall A',
+      region: 'NDAR',
     })
   })
 
@@ -154,6 +158,7 @@ describe('CMAMS browser workflows', () => {
                 id: '11111111-1111-4111-8111-111111111111',
                 name: 'North Cell',
                 meeting_location: 'Hall A',
+                region: 'NDAR',
                 is_active: true,
               },
             ],
@@ -237,11 +242,30 @@ describe('CMAMS browser workflows', () => {
       .toBeVisible()
   })
 
-  it('shows compounds grouped by region without an add-compound form', async () => {
+  it('shows compounds and cells grouped by region without an add-compound form', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        jsonResponse({
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/cells')
+          return jsonResponse({
+            cells: [
+              {
+                id: '33333333-3333-4333-8333-333333333333',
+                name: 'Ndar Region 1',
+                meeting_location: 'Hall A',
+                region: 'NDAR',
+                is_active: true,
+              },
+              {
+                id: '44444444-4444-4444-8444-444444444444',
+                name: 'Across Region 1',
+                meeting_location: 'Hall B',
+                region: 'ACROSS',
+                is_active: true,
+              },
+            ],
+          })
+        return jsonResponse({
           compounds: [
             {
               id: '11111111-1111-4111-8111-111111111111',
@@ -266,13 +290,18 @@ describe('CMAMS browser workflows', () => {
             { code: 'HOSTEL', label: 'Hostel' },
           ],
         })
-      )
+      })
     )
     const screen = await renderWithShell(<CatalogsPage />)
     await expect.element(screen.getByText('Army Barracks')).toBeVisible()
     await expect.element(screen.getByText('2 members')).toBeVisible()
+    await expect.element(screen.getByText('Ndar Region 1')).toBeVisible()
+    await expect.element(screen.getByText('Cells by region')).toBeVisible()
     await expect
       .element(screen.getByText('No compounds saved under Chikam yet.'))
+      .toBeVisible()
+    await expect
+      .element(screen.getByText('No cells under Chikam yet.'))
       .toBeVisible()
     expect(screen.getByLabelText('New compound name').query()).toBeNull()
     await expect

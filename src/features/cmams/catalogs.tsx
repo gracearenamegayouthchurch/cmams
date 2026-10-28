@@ -31,6 +31,13 @@ type Compound = {
   member_count: number
 }
 type Department = { id: string; name: string }
+type Cell = {
+  id: string
+  name: string
+  meeting_location: string
+  region: string
+  is_active: boolean
+}
 type Catalogs = {
   compounds: Compound[]
   departments: Department[]
@@ -47,6 +54,10 @@ export function CatalogsPage() {
   const catalogs = useQuery({
     queryKey: ['registration-catalogs'],
     queryFn: () => api<Catalogs>('/api/v1/catalogs'),
+  })
+  const cells = useQuery({
+    queryKey: ['cells'],
+    queryFn: () => api<{ cells: Cell[] }>('/api/v1/cells'),
   })
   const [departmentName, setDepartmentName] = useState('')
   const [editingCompound, setEditingCompound] = useState<Compound | null>(null)
@@ -105,6 +116,9 @@ export function CatalogsPage() {
     compounds: (catalogs.data?.compounds ?? []).filter(
       (item) => item.region === region.code
     ),
+    cells: (cells.data?.cells ?? []).filter(
+      (item) => item.region === region.code
+    ),
   }))
   const regionLabel = (code: string) =>
     catalogs.data?.regions.find((item) => item.code === code)?.label ?? code
@@ -120,9 +134,12 @@ export function CatalogsPage() {
         </p>
       )}
       <QueryState
-        loading={catalogs.isPending}
-        error={catalogs.error}
-        onRetry={() => void catalogs.refetch()}
+        loading={catalogs.isPending || cells.isPending}
+        error={catalogs.error || cells.error}
+        onRetry={() => {
+          void catalogs.refetch()
+          void cells.refetch()
+        }}
       />
       <Card className='mb-5'>
         <CardHeader>
@@ -279,6 +296,51 @@ export function CatalogsPage() {
                   </li>
                 ))}
               </ul>
+            </section>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card className='mb-5'>
+        <CardHeader>
+          <CardTitle>Cells by region</CardTitle>
+          <CardDescription>
+            Saturday fellowship groups nested under their region. Manage names,
+            meeting places, leaders, and members on the Cells page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className='space-y-5'>
+          {groups.map((group) => (
+            <section key={group.code} className='space-y-2'>
+              <div className='flex items-baseline justify-between gap-3'>
+                <h3 className='text-sm font-semibold'>{group.label}</h3>
+                <span className='text-xs text-muted-foreground'>
+                  {group.cells.length} cell
+                  {group.cells.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {group.cells.length === 0 ? (
+                <p className='rounded-lg border border-dashed p-3 text-sm text-muted-foreground'>
+                  No cells under {group.label} yet.
+                </p>
+              ) : (
+                <ul className='divide-y rounded-lg border'>
+                  {group.cells.map((cell) => (
+                    <li
+                      className='flex flex-wrap items-center justify-between gap-2 px-3 py-2'
+                      key={cell.id}
+                    >
+                      <span className='text-sm'>
+                        {cell.name}
+                        {cell.is_active ? '' : ' (archived)'}
+                      </span>
+                      <span className='text-xs text-muted-foreground'>
+                        {cell.meeting_location}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           ))}
         </CardContent>

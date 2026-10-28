@@ -18,13 +18,16 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
 import { CardDownloads } from './cards'
 import { formatStage, stageBadgeClass } from './format'
 import { ChurchPage } from './pages'
+import { REGIONS } from './regions'
 import { ServicePicker } from './service-picker'
 import {
   type IssuedCard,
@@ -79,7 +82,9 @@ export function DeskPage() {
   const cells = useQuery({
     queryKey: ['cells'],
     queryFn: () =>
-      api<{ cells: { id: string; name: string }[] }>('/api/v1/cells'),
+      api<{ cells: { id: string; name: string; region: string }[] }>(
+        '/api/v1/cells'
+      ),
   })
   const debouncedMemberSearch = useDebouncedValue(memberSearch)
   const memberResults = useQuery({
@@ -626,11 +631,22 @@ export function DeskPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value='none'>No cell group</SelectItem>
-                      {(cells.data?.cells ?? []).map((cell) => (
-                        <SelectItem key={cell.id} value={cell.id}>
-                          {cell.name}
-                        </SelectItem>
-                      ))}
+                      {REGIONS.map((group) => {
+                        const groupCells = (cells.data?.cells ?? []).filter(
+                          (cell) => cell.region === group.code
+                        )
+                        if (!groupCells.length) return null
+                        return (
+                          <SelectGroup key={group.code}>
+                            <SelectLabel>{group.label}</SelectLabel>
+                            {groupCells.map((cell) => (
+                              <SelectItem key={cell.id} value={cell.id}>
+                                {cell.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                   {cells.error && (

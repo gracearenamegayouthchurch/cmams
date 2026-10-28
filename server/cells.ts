@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type pg from 'pg'
 import type { StaffRole } from './rbac.js'
+import { compoundRegion } from './compound-regions.js'
 
 type Db = Pick<pg.Pool, 'query' | 'connect'>
 export type CellActor = { id: string; role: StaffRole }
@@ -9,7 +10,11 @@ export class CellAccessError extends Error {
   constructor() { super('Cell access not permitted') }
 }
 
-const cellFields = z.object({ name: z.string().trim().min(1).max(100), location: z.string().trim().min(1).max(200) })
+const cellFields = z.object({
+  name: z.string().trim().min(1).max(100),
+  location: z.string().trim().min(1).max(200),
+  region: compoundRegion,
+})
 
 function manager(actor: CellActor) {
   if (actor.role !== 'ADMIN' && actor.role !== 'PASTOR_VIEWER') throw new CellAccessError()
@@ -29,9 +34,9 @@ export async function requireCellScope(db: Pick<Db, 'query'>, actor: CellActor, 
 export async function listCells(db: Pick<Db, 'query'>, actor: CellActor) {
   if (actor.role === 'CELL_LEADER') {
     const result = await db.query(
-      `SELECT c.id,c.name,c.meeting_location,c.is_active FROM cells c
+      `SELECT c.id,c.name,c.meeting_location,c.region,c.is_active FROM cells c
        JOIN cell_leader_assignments a ON a.cell_id=c.id
-       WHERE a.staff_id=$1 AND a.valid_to IS NULL AND c.is_active=true ORDER BY c.name`,
+       WHERE a.staff_id=$1 AND a.valid_to IS NULL AND c.is_active=true ORDER BY c.region,c.name`,
       [actor.id]
     )
     return result.rows
@@ -39,8 +44,8 @@ export async function listCells(db: Pick<Db, 'query'>, actor: CellActor) {
   if (actor.role !== 'ADMIN' && actor.role !== 'PASTOR_VIEWER' && actor.role !== 'REGISTRATION_DESK' && actor.role !== 'SERVICE_SUPERVISOR') throw new CellAccessError()
   const result = await db.query(
     actor.role === 'ADMIN' || actor.role === 'PASTOR_VIEWER'
-      ? 'SELECT id,name,meeting_location,is_active FROM cells ORDER BY is_active DESC,name'
-      : 'SELECT id,name,meeting_location,is_active FROM cells WHERE is_active=true ORDER BY name'
+      ? 'SELECT id,name,meeting_location,region,is_active FROM cells ORDER BY is_active DESC,region,name'
+      : 'SELECT id,name,meeting_location,region,is_active FROM cells WHERE is_active=true ORDER BY region,name'
   )
   return result.rows
 }
@@ -85,8 +90,8 @@ export async function createCell(db: Db, input: unknown, actor: CellActor) {
   try {
     await client.query('BEGIN')
     const result = await client.query(
-      'INSERT INTO cells(name,meeting_location) VALUES($1,$2) RETURNING id,name,meeting_location,is_active',
-      [data.name, data.location]
+      'INSERT INTO cells(name,meeting_location,region) VALUES($1,$2,$3) RETURNING id,name,meeting_location,region,is_active',
+      [data.name, data.location, data.region]
     )
     await client.query(
       `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
@@ -108,9 +113,9 @@ export async function updateCell(db: Db, cellId: string, input: unknown, actor: 
   try {
     await client.query('BEGIN')
     const result = await client.query(
-      `UPDATE cells SET name=$2,meeting_location=$3,updated_at=now()
-       WHERE id=$1 AND is_active=true RETURNING id,name,meeting_location,is_active`,
-      [id, data.name, data.location]
+      `UPDATE cells SET name=$2,meeting_location=$3,region=$4,updated_at=now()
+       WHERE id=$1 AND is_active=true RETURNING id,name,meeting_location,region,is_active`,
+      [id, data.name, data.location, data.region]
     )
     if (!result.rows.length) throw new CellAccessError()
     await client.query(

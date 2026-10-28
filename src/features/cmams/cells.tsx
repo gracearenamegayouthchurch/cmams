@@ -16,13 +16,16 @@ import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
+import { REGIONS, regionLabel } from './regions'
 import { createScanLock } from './scan-lock'
 import { type PaginatedPeople } from './types'
 
@@ -30,6 +33,7 @@ type Cell = {
   id: string
   name: string
   meeting_location: string
+  region: string
   is_active: boolean
 }
 type Leader = { id: string; full_name: string; cell_id: string | null }
@@ -120,9 +124,11 @@ export function CellsPage() {
   const [busy, setBusy] = useState(false)
   const [newName, setNewName] = useState('')
   const [newLocation, setNewLocation] = useState('')
+  const [newRegion, setNewRegion] = useState('')
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
   const [location, setLocation] = useState('')
+  const [region, setRegion] = useState('')
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
   const [personId, setPersonId] = useState('')
@@ -167,10 +173,15 @@ export function CellsPage() {
     void act(async () => {
       const result = await api<{ cell: Cell }>('/api/v1/cells', {
         method: 'POST',
-        body: JSON.stringify({ name: newName, location: newLocation }),
+        body: JSON.stringify({
+          name: newName,
+          location: newLocation,
+          region: newRegion,
+        }),
       })
       setNewName('')
       setNewLocation('')
+      setNewRegion('')
       setSelectedId(result.cell.id)
     }, 'Cell created.')
   }
@@ -256,7 +267,22 @@ export function CellsPage() {
                   onChange={(event) => setNewLocation(event.target.value)}
                 />
               </div>
-              <Button disabled={busy}>Create cell</Button>
+              <div className='min-w-40 flex-1 space-y-1'>
+                <Label htmlFor='new-cell-region'>Region</Label>
+                <Select value={newRegion} onValueChange={setNewRegion}>
+                  <SelectTrigger id='new-cell-region' className='w-full'>
+                    <SelectValue placeholder='Choose region' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REGIONS.map((entry) => (
+                      <SelectItem key={entry.code} value={entry.code}>
+                        {entry.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button disabled={busy || !newRegion}>Create cell</Button>
             </form>
           </CardContent>
         </Card>
@@ -283,12 +309,23 @@ export function CellsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {cells.data?.cells.map((cell) => (
-                  <SelectItem key={cell.id} value={cell.id}>
-                    {cell.name}
-                    {cell.is_active ? '' : ' (archived)'}
-                  </SelectItem>
-                ))}
+                {REGIONS.map((group) => {
+                  const groupCells = (cells.data?.cells ?? []).filter(
+                    (cell) => cell.region === group.code
+                  )
+                  if (!groupCells.length) return null
+                  return (
+                    <SelectGroup key={group.code}>
+                      <SelectLabel>{group.label}</SelectLabel>
+                      {groupCells.map((cell) => (
+                        <SelectItem key={cell.id} value={cell.id}>
+                          {cell.name}
+                          {cell.is_active ? '' : ' (archived)'}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -296,7 +333,8 @@ export function CellsPage() {
             <CardHeader>
               <CardTitle>{selected.name}</CardTitle>
               <CardDescription>
-                Saturday meeting place: {selected.meeting_location}
+                {regionLabel(selected.region)} region · Saturday meeting place:{' '}
+                {selected.meeting_location}
                 {selected.is_active ? '' : ' · archived'}
               </CardDescription>
             </CardHeader>
@@ -311,7 +349,7 @@ export function CellsPage() {
                         () =>
                           api(`/api/v1/cells/${selected.id}`, {
                             method: 'PATCH',
-                            body: JSON.stringify({ name, location }),
+                            body: JSON.stringify({ name, location, region }),
                           }),
                         'Cell updated.'
                       ).then(() => setEditing(false))
@@ -335,7 +373,22 @@ export function CellsPage() {
                         onChange={(event) => setLocation(event.target.value)}
                       />
                     </div>
-                    <Button disabled={busy}>Save</Button>
+                    <div className='space-y-1'>
+                      <Label htmlFor='edit-cell-region'>Region</Label>
+                      <Select value={region} onValueChange={setRegion}>
+                        <SelectTrigger id='edit-cell-region' className='w-40'>
+                          <SelectValue placeholder='Choose region' />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REGIONS.map((entry) => (
+                            <SelectItem key={entry.code} value={entry.code}>
+                              {entry.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button disabled={busy || !region}>Save</Button>
                     <Button
                       type='button'
                       variant='outline'
@@ -351,6 +404,7 @@ export function CellsPage() {
                       onClick={() => {
                         setName(selected.name)
                         setLocation(selected.meeting_location)
+                        setRegion(selected.region)
                         setEditing(true)
                       }}
                     >
