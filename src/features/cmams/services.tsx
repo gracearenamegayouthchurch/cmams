@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -31,11 +32,6 @@ import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { type Service } from './types'
 
-function toLocalDatetimeInput(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
 function nextSundayPreset() {
   const now = new Date()
   const daysUntilSunday = (7 - now.getDay()) % 7
@@ -51,11 +47,7 @@ function nextSundayPreset() {
   open.setHours(7, 0, 0, 0)
   const close = new Date(start)
   close.setHours(11, 0, 0, 0)
-  return {
-    scheduled: toLocalDatetimeInput(start),
-    opens: toLocalDatetimeInput(open),
-    closes: toLocalDatetimeInput(close),
-  }
+  return { scheduled: start, opens: open, closes: close }
 }
 
 function readableServiceError(message: string): string {
@@ -77,11 +69,12 @@ export function ServicesPage() {
     queryFn: () => api<{ services: Service[] }>('/api/v1/services'),
   })
   const [message, setMessage] = useState('')
+  const [formError, setFormError] = useState('')
   const [name, setName] = useState('')
   const [category, setCategory] = useState('SUNDAY_SERVICE')
-  const [scheduled, setScheduled] = useState('')
-  const [opens, setOpens] = useState('')
-  const [closes, setCloses] = useState('')
+  const [scheduled, setScheduled] = useState<Date | undefined>()
+  const [opens, setOpens] = useState<Date | undefined>()
+  const [closes, setCloses] = useState<Date | undefined>()
 
   const mutation = useMutation({
     mutationFn: ({
@@ -113,20 +106,30 @@ export function ServicesPage() {
     setScheduled(preset.scheduled)
     setOpens(preset.opens)
     setCloses(preset.closes)
+    setFormError('')
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessage('')
+    setFormError('')
+    if (!scheduled || !opens || !closes) {
+      setFormError('Choose the service start and both check-in times.')
+      return
+    }
+    if (closes <= opens) {
+      setFormError('Check-in must close after it opens.')
+      return
+    }
     try {
       await mutation.mutateAsync({
         path: '/api/v1/services',
         body: {
           name,
           category,
-          scheduledStartAt: new Date(scheduled).toISOString(),
-          opensAt: new Date(opens).toISOString(),
-          closesAt: new Date(closes).toISOString(),
+          scheduledStartAt: scheduled.toISOString(),
+          opensAt: opens.toISOString(),
+          closesAt: closes.toISOString(),
         },
       })
       setName('')
@@ -234,15 +237,27 @@ export function ServicesPage() {
               ).map(([id, value, setValue, label]) => (
                 <div className='space-y-1.5' key={id}>
                   <Label htmlFor={id}>{label}</Label>
-                  <Input
+                  <DateTimePicker
                     id={id}
-                    type='datetime-local'
-                    required
                     value={value}
-                    onChange={(event) => setValue(event.target.value)}
+                    onChange={(date) => {
+                      setValue(date)
+                      setFormError('')
+                    }}
+                    granularity='minute'
+                    hourCycle={12}
+                    placeholder='Choose date and time'
                   />
                 </div>
               ))}
+              {formError && (
+                <p
+                  role='alert'
+                  className='rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2 text-sm text-destructive'
+                >
+                  {formError}
+                </p>
+              )}
               <Button disabled={mutation.isPending} className='w-full'>
                 <CalendarPlus className='size-4' />
                 {mutation.isPending ? 'Saving…' : 'Schedule service'}
