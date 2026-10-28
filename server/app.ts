@@ -8,6 +8,7 @@ import {
 } from './auth.js'
 import { roles, type Capability, allow } from './rbac.js'
 import {
+  CompoundRegionConflict,
   DuplicatePersonError,
   InvalidCatalogSelection,
   findDuplicates,
@@ -23,7 +24,15 @@ import {
   ServiceTransitionError,
 } from './services.js'
 import { IdempotencyConflict, manualCheckin, scanCard } from './checkins.js'
-import { createCatalogEntry, deactivateCatalogEntry, listActiveCatalogs, renameCatalogEntry } from './catalogs.js'
+import {
+  CatalogError,
+  createCatalogEntry,
+  deactivateCatalogEntry,
+  listActiveCatalogs,
+  mergeCompounds,
+  renameCatalogEntry,
+  updateCompound,
+} from './catalogs.js'
 import { archiveCell, assignLeader, assignMember, CellAccessError, createCell, listCellLeaders, listCellMembers, listCells, updateCell } from './cells.js'
 import { CellMeetingError, createCellMeeting, listCellMeetingAttendance, listCellMeetings, scanCellCard, transitionCellMeeting } from './cell-meetings.js'
 import { StaffError, changeOwnPassword, createStaff, listStaff, resetStaffPassword, updateStaff } from './staff.js'
@@ -414,6 +423,22 @@ export async function handleApi(request: Request): Promise<Response> {
         return json({ error: 'Action not permitted' }, 403)
       return json(await listActiveCatalogs(getDb()))
     }
+    const compoundMerge = path.match(
+      /^\/api\/v1\/catalogs\/compounds\/([0-9a-f-]{36})\/merge$/i
+    )
+    if (compoundMerge && method === 'POST') {
+      if (staff.role !== 'ADMIN')
+        return json({ error: 'Action not permitted' }, 403)
+      const body = z.object({ intoId: z.uuid() }).parse(await request.json())
+      return json({
+        compound: await mergeCompounds(
+          getDb(),
+          compoundMerge[1],
+          body.intoId,
+          staff.id
+        ),
+      })
+    }
     const catalogRoute = path.match(/^\/api\/v1\/catalogs\/(compounds|departments)(?:\/([0-9a-f-]{36}))?$/i)
     if (catalogRoute) {
       if (staff.role !== 'ADMIN') return json({ error: 'Action not permitted' }, 403)
@@ -421,6 +446,15 @@ export async function handleApi(request: Request): Promise<Response> {
       if (!id && method === 'POST')
         return json({ entry: await createCatalogEntry(getDb(), kind as 'compounds' | 'departments', (await request.json()).name) }, 201)
       if (id && method === 'PATCH') {
+        if (kind === 'compounds')
+          return json({
+            compound: await updateCompound(
+              getDb(),
+              id,
+              await request.json(),
+              staff.id
+            ),
+          })
         const entry = await renameCatalogEntry(getDb(), kind as 'compounds' | 'departments', id, (await request.json()).name)
         return entry ? json({ entry }) : json({ error: 'Catalog entry not found' }, 404)
       }
@@ -484,6 +518,16 @@ export async function handleApi(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof CellAccessError) return json({ error: error.message }, 403)
     if (error instanceof CellMeetingError) return json({ error: error.message }, error.status)
+    if (error instanceof CompoundRegionConflict)
+      return json(
+        {
+          error: error.message,
+          code: 'COMPOUND_REGION_CONFLICT',
+          region: error.region,
+        },
+        409
+      )
+    if (error instanceof CatalogError) return json({ error: error.message }, 400)
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505')
       return json({ error: path.startsWith('/api/v1/catalogs/') || path === '/api/v1/cells' ? 'An entry with that name already exists' : 'Conflicting request; please retry or review existing records' }, 409)
     if (error instanceof InvalidCatalogSelection) return json({ error: error.message }, 400)

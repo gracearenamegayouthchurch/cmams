@@ -1,6 +1,12 @@
 import { z } from 'zod'
 import type pg from 'pg'
 import { maskPhone, type StaffRole } from './rbac.js'
+import {
+  compoundRegion,
+  normalizeCompoundName,
+  regionLabel,
+  type CompoundRegion,
+} from './compound-regions.js'
 
 export class DuplicatePersonError extends Error {
   constructor(readonly matches: unknown[]) {
@@ -13,7 +19,8 @@ const registration = z.object({
   lastName: z.string().trim().min(1).max(100),
   middleName: z.string().trim().max(100).optional(),
   email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
-  compoundId: z.uuid(),
+  region: compoundRegion,
+  compoundName: z.string().trim().min(1).max(100),
   room: z.string().trim().max(100).optional(),
   departmentId: z.uuid().optional(),
   cellId: z.uuid().optional(),
@@ -41,13 +48,74 @@ export function validateRegistration(input: unknown) {
 }
 
 export class InvalidCatalogSelection extends Error {
-  constructor() { super('Choose an active compound and department') }
+  constructor() {
+    super('Choose an active department or cell group')
+  }
+}
+
+export class CompoundRegionConflict extends Error {
+  constructor(readonly region: CompoundRegion) {
+    super(
+      `This compound is already saved under ${regionLabel(region)}. Choose that region or use the existing compound.`
+    )
+  }
 }
 export function reversedName(fullName: string) {
   return fullName.trim().split(/\s+/).reverse().join(' ')
 }
 
 type Db = Pick<pg.Pool, 'query' | 'connect'>
+
+export async function resolveCompound(
+  db: Pick<pg.Pool, 'query'>,
+  input: { name: string; region: CompoundRegion },
+  staffId: string
+) {
+  const normalized = normalizeCompoundName(input.name)
+  const displayName = input.name.trim().replace(/\s+/g, ' ')
+  const existing = await db.query(
+    'SELECT id,region,is_active FROM compounds WHERE normalized_name=$1',
+    [normalized]
+  )
+  if (existing.rows.length) {
+    const row = existing.rows[0]
+    if (row.region !== input.region)
+      throw new CompoundRegionConflict(row.region)
+    if (!row.is_active) {
+      await db.query(
+        'UPDATE compounds SET is_active=true,updated_at=now() WHERE id=$1',
+        [row.id]
+      )
+      await db.query(
+        `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
+         VALUES($1,'COMPOUND_REACTIVATED','compound',$2)`,
+        [staffId, row.id]
+      )
+    }
+    return row.id as string
+  }
+  const inserted = await db.query(
+    `INSERT INTO compounds(name,region) VALUES($1,$2)
+     ON CONFLICT (normalized_name) DO NOTHING RETURNING id`,
+    [displayName, input.region]
+  )
+  if (inserted.rows.length) {
+    await db.query(
+      `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
+       VALUES($1,'COMPOUND_CREATED','compound',$2)`,
+      [staffId, inserted.rows[0].id]
+    )
+    return inserted.rows[0].id as string
+  }
+  const raced = await db.query(
+    'SELECT id,region FROM compounds WHERE normalized_name=$1',
+    [normalized]
+  )
+  if (!raced.rows.length) throw new Error('Compound could not be saved')
+  if (raced.rows[0].region !== input.region)
+    throw new CompoundRegionConflict(raced.rows[0].region)
+  return raced.rows[0].id as string
+}
 
 export async function findDuplicates(
   db: Db,
@@ -84,11 +152,11 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
   const client = await db.connect()
   try {
     await client.query('BEGIN')
-    const compound = await client.query(
-      'SELECT id FROM compounds WHERE id=$1 AND is_active=true FOR SHARE',
-      [data.compoundId]
+    const compoundId = await resolveCompound(
+      client,
+      { name: data.compoundName, region: data.region },
+      staffId
     )
-    if (!compound.rows.length) throw new InvalidCatalogSelection()
     if (data.departmentId) {
       const department = await client.query(
         'SELECT id FROM departments WHERE id=$1 AND is_active=true FOR SHARE',
@@ -116,7 +184,7 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
         data.householdId ?? null,
         staffId,
         data.email,
-        data.compoundId,
+        compoundId,
         data.room || null,
         data.birthMonth,
         data.birthDay,

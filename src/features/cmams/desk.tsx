@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Search, UserCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/cmams-api'
 import { Badge } from '@/components/ui/badge'
@@ -28,11 +28,14 @@ import { ServicePicker } from './service-picker'
 import { type IssuedCard, type Person, type Service } from './types'
 
 export function DeskPage() {
+  const queryClient = useQueryClient()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
-  const [compoundId, setCompoundId] = useState('')
+  const [region, setRegion] = useState('')
+  const [compoundName, setCompoundName] = useState('')
+  const [compoundFocused, setCompoundFocused] = useState(false)
   const [departmentId, setDepartmentId] = useState('')
   const [cellId, setCellId] = useState('')
   const [room, setRoom] = useState('')
@@ -58,8 +61,9 @@ export function DeskPage() {
     queryKey: ['registration-catalogs'],
     queryFn: () =>
       api<{
-        compounds: { id: string; name: string }[]
+        compounds: { id: string; name: string; region: string }[]
         departments: { id: string; name: string }[]
+        regions: { code: string; label: string }[]
       }>('/api/v1/catalogs'),
   })
   const cells = useQuery({
@@ -72,6 +76,33 @@ export function DeskPage() {
     services.data?.services.find((service) => service.status === 'CHECKIN_OPEN')
       ?.id ||
     ''
+  const compounds = catalogs.data?.compounds ?? []
+  const normalizedItemName = (value: string) =>
+    value.trim().replace(/\s+/g, ' ').toLowerCase()
+  const normalizedCompound = normalizedItemName(compoundName)
+  const regionCompounds = compounds.filter((item) => item.region === region)
+  const compoundSuggestions = (
+    normalizedCompound
+      ? regionCompounds.filter((item) =>
+          normalizedItemName(item.name).includes(normalizedCompound)
+        )
+      : regionCompounds
+  ).slice(0, 8)
+  const crossRegionCompounds =
+    normalizedCompound.length >= 2
+      ? compounds
+          .filter(
+            (item) =>
+              item.region !== region &&
+              normalizedItemName(item.name).includes(normalizedCompound)
+          )
+          .slice(0, 3)
+      : []
+  const exactCompound = regionCompounds.find(
+    (item) => normalizedItemName(item.name) === normalizedCompound
+  )
+  const regionLabel = (code: string) =>
+    catalogs.data?.regions.find((item) => item.code === code)?.label ?? code
 
   async function checkDuplicates() {
     if (!firstName.trim() || !lastName.trim()) {
@@ -115,8 +146,14 @@ export function DeskPage() {
     event.preventDefault()
     setError('')
     setMessage('')
-    if (!compoundId || !birthMonth || !birthDay || !email.trim()) {
-      setError('Enter email, compound, birth month and birth day.')
+    if (
+      !region ||
+      !compoundName.trim() ||
+      !birthMonth ||
+      !birthDay ||
+      !email.trim()
+    ) {
+      setError('Enter email, region, compound, birth month and birth day.')
       return
     }
     const month = Number(birthMonth)
@@ -143,7 +180,8 @@ export function DeskPage() {
           lastName,
           phone: phone || null,
           email,
-          compoundId,
+          region,
+          compoundName: compoundName.trim(),
           room: room || undefined,
           departmentId: departmentId || undefined,
           cellId: cellId || undefined,
@@ -157,6 +195,9 @@ export function DeskPage() {
       })
       setPerson(response.person)
       setCandidates([])
+      void queryClient.invalidateQueries({
+        queryKey: ['registration-catalogs'],
+      })
       try {
         const issued = await api<{ card: IssuedCard }>(
           `/api/v1/people/${response.person.id}/cards`,
@@ -170,7 +211,12 @@ export function DeskPage() {
         )
       }
     } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 409) {
+      if (
+        reason instanceof ApiError &&
+        reason.code === 'COMPOUND_REGION_CONFLICT'
+      ) {
+        setError(reason.message)
+      } else if (reason instanceof ApiError && reason.status === 409) {
         setError(
           'A similar record already exists. Click "Check for matches" to review before registering.'
         )
@@ -327,26 +373,97 @@ export function DeskPage() {
                   />
                 </div>
                 <div className='space-y-1.5'>
-                  <Label htmlFor='compound'>Compound</Label>
+                  <Label htmlFor='region'>Region</Label>
                   <Select
-                    value={compoundId}
+                    value={region}
                     onValueChange={(value) => {
-                      setCompoundId(value)
+                      setRegion(value)
                       setCandidates([])
                       setConfirmed(false)
                     }}
                   >
-                    <SelectTrigger id='compound' className='w-full'>
-                      <SelectValue placeholder='Select compound' />
+                    <SelectTrigger id='region' className='w-full'>
+                      <SelectValue placeholder='Select region' />
                     </SelectTrigger>
                     <SelectContent>
-                      {catalogs.data?.compounds.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {item.name}
+                      {(catalogs.data?.regions ?? []).map((item) => (
+                        <SelectItem key={item.code} value={item.code}>
+                          {item.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className='space-y-1.5 sm:col-span-2'>
+                  <Label htmlFor='compound'>Compound</Label>
+                  <Input
+                    id='compound'
+                    required
+                    maxLength={100}
+                    autoComplete='off'
+                    value={compoundName}
+                    placeholder='Type the compound name'
+                    onFocus={() => setCompoundFocused(true)}
+                    onBlur={() => setCompoundFocused(false)}
+                    onChange={(event) => {
+                      setCompoundName(event.target.value)
+                      setCandidates([])
+                      setConfirmed(false)
+                    }}
+                    aria-describedby='compound-help'
+                  />
+                  <p
+                    id='compound-help'
+                    className='text-xs text-muted-foreground'
+                  >
+                    Type what the member says. New compounds are saved
+                    automatically under the selected region.
+                  </p>
+                  {compoundFocused &&
+                    region &&
+                    (compoundSuggestions.length > 0 ||
+                      crossRegionCompounds.length > 0) && (
+                      <div className='rounded-lg border bg-background p-1 shadow-sm'>
+                        {compoundSuggestions.map((item) => (
+                          <button
+                            key={item.id}
+                            type='button'
+                            className='block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted'
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => setCompoundName(item.name)}
+                          >
+                            {item.name}
+                          </button>
+                        ))}
+                        {crossRegionCompounds.map((item) => (
+                          <button
+                            key={item.id}
+                            type='button'
+                            className='block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted'
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setCompoundName(item.name)
+                              setRegion(item.region)
+                            }}
+                          >
+                            <span className='text-amber-700 dark:text-amber-300'>
+                              Already under {regionLabel(item.region)}:
+                            </span>{' '}
+                            {item.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  {exactCompound && (
+                    <p className='text-xs text-emerald-700 dark:text-emerald-300'>
+                      Using the saved compound “{exactCompound.name}”.
+                    </p>
+                  )}
+                  {!region && compoundName.trim() && (
+                    <p className='text-xs text-muted-foreground'>
+                      Choose a region to see compounds already saved there.
+                    </p>
+                  )}
                 </div>
               </div>
               {catalogs.isPending && (
@@ -356,14 +473,8 @@ export function DeskPage() {
               )}
               {catalogs.error && (
                 <p role='alert' className='text-sm text-destructive'>
-                  Could not load compounds and departments. Retry by refreshing
-                  this page.
-                </p>
-              )}
-              {catalogs.data?.compounds.length === 0 && (
-                <p role='alert' className='text-sm text-destructive'>
-                  No active compound is available. Ask an Admin to add one
-                  before registering.
+                  Could not load regions, compounds and departments. Retry by
+                  refreshing this page.
                 </p>
               )}
 
@@ -490,9 +601,9 @@ export function DeskPage() {
               <div className='rounded-xl border bg-muted/30 p-4 text-sm'>
                 <p className='font-medium text-foreground'>Privacy notice</p>
                 <p className='mt-1 text-xs leading-relaxed text-muted-foreground'>
-                  Grace Arena stores your name, email, compound, room (if
-                  given), birthday (year optional), department (if given), phone
-                  (if given), cell group (if joined), church-service and
+                  Grace Arena stores your name, email, region and compound, room
+                  (if given), birthday (year optional), department (if given),
+                  phone (if given), cell group (if joined), church-service and
                   Saturday cell attendance for church records and pastoral
                   follow-up. Cell leaders may view the full profile of members
                   in their cell, but not church-service attendance history.
@@ -538,7 +649,6 @@ export function DeskPage() {
                   !consent ||
                   catalogs.isPending ||
                   !!catalogs.error ||
-                  !catalogs.data?.compounds.length ||
                   (candidates.length > 0 && !confirmed)
                 }
               >

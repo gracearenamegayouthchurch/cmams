@@ -61,6 +61,7 @@ export async function listCellMembers(db: Pick<Db, 'query'>, actor: CellActor, c
   const result = await db.query(
     `SELECT p.id,p.member_code,p.first_name,p.middle_name,p.last_name,p.phone_e164,p.email,
       p.room,p.birth_month,p.birth_day,p.birth_year,p.compound_id,compounds.name AS compound_name,
+      compounds.region AS compound_region,
       pd.department_id,departments.name AS department_name,p.lifecycle_stage,p.registered_at
      FROM cell_memberships m
      JOIN cells c ON c.id=m.cell_id AND c.is_active=true

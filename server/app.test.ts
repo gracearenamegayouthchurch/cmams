@@ -35,7 +35,16 @@ describe('API boundary', () => {
     const headers = { cookie: `cmams_session=${token}`, origin: 'https://church.example' }
     const list = await handleApi(new Request('https://church.example/api/v1/catalogs', { headers }))
     expect(list.status).toBe(200)
-    expect(await list.json()).toEqual({ compounds: [], departments: [] })
+    expect(await list.json()).toMatchObject({
+      compounds: [],
+      departments: [],
+      regions: [
+        { code: 'ACROSS', label: 'Across' },
+        { code: 'NDAR', label: 'Ndar' },
+        { code: 'CHIKAM', label: 'Chikam' },
+        { code: 'HOSTEL', label: 'Hostel' },
+      ],
+    })
     const create = await handleApi(new Request('https://church.example/api/v1/catalogs/compounds', {
       method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'North' }),
     }))
@@ -168,9 +177,9 @@ describe('API boundary', () => {
       query: async (sql: string) => ({
         rows: sql.includes('INSERT INTO people')
           ? [{ id: 'person', member_code: 'CM-1001' }]
-          : sql.includes('SELECT id FROM compounds')
-            ? [{ id: '11111111-1111-4111-8111-111111111111' }]
-          : [],
+          : sql.includes('FROM compounds WHERE normalized_name')
+            ? [{ id: '11111111-1111-4111-8111-111111111111', region: 'ACROSS', is_active: true }]
+            : [],
       }),
       release: () => {},
     })
@@ -187,7 +196,8 @@ describe('API boundary', () => {
           firstName: 'Ada',
           lastName: 'Okafor',
           email: 'ada@example.org',
-          compoundId: '11111111-1111-4111-8111-111111111111',
+          region: 'ACROSS',
+          compoundName: 'East Gate',
           birthMonth: 2,
           birthDay: 29,
           consent: true,

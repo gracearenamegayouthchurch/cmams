@@ -15,7 +15,8 @@ export type Staff = {
 export class ApiError extends Error {
   constructor(
     message: string,
-    readonly status: number
+    readonly status: number,
+    readonly code?: string
   ) {
     super(message)
   }
@@ -41,7 +42,14 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       typeof result.error === 'string'
         ? result.error
         : `Request failed (${response.status})`
-    throw new ApiError(message, response.status)
+    const code =
+      typeof result === 'object' &&
+      result &&
+      'code' in result &&
+      typeof result.code === 'string'
+        ? result.code
+        : undefined
+    throw new ApiError(message, response.status, code)
   }
   return response.json() as Promise<T>
 }

@@ -11,13 +11,36 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 
-type Kind = 'compounds' | 'departments'
-type Entry = { id: string; name: string }
-type Catalogs = Record<Kind, Entry[]>
+type Region = { code: string; label: string }
+type Compound = {
+  id: string
+  name: string
+  region: string
+  is_active: boolean
+  member_count: number
+}
+type Department = { id: string; name: string }
+type Catalogs = {
+  compounds: Compound[]
+  departments: Department[]
+  regions: Region[]
+}
+type MutationInput = {
+  path: string
+  method: 'POST' | 'PATCH' | 'DELETE'
+  body?: unknown
+}
 
 export function CatalogsPage() {
   const queryClient = useQueryClient()
@@ -25,35 +48,34 @@ export function CatalogsPage() {
     queryKey: ['registration-catalogs'],
     queryFn: () => api<Catalogs>('/api/v1/catalogs'),
   })
-  const [names, setNames] = useState<Record<Kind, string>>({
-    compounds: '',
-    departments: '',
-  })
-  const [editing, setEditing] = useState<(Entry & { kind: Kind }) | null>(null)
-  const [removing, setRemoving] = useState<(Entry & { kind: Kind }) | null>(
+  const [departmentName, setDepartmentName] = useState('')
+  const [editingCompound, setEditingCompound] = useState<Compound | null>(null)
+  const [compoundName, setCompoundName] = useState('')
+  const [compoundRegion, setCompoundRegion] = useState('')
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(
     null
   )
+  const [departmentEditName, setDepartmentEditName] = useState('')
+  const [removing, setRemoving] = useState<{
+    kind: 'compound' | 'department'
+    id: string
+    name: string
+  } | null>(null)
+  const [merging, setMerging] = useState<Compound | null>(null)
+  const [mergeTarget, setMergeTarget] = useState('')
   const [error, setError] = useState('')
   const mutation = useMutation({
-    mutationFn: async ({
-      kind,
-      id,
-      method,
-      name,
-    }: {
-      kind: Kind
-      id?: string
-      method: 'POST' | 'PATCH' | 'DELETE'
-      name?: string
-    }) =>
-      api(`/api/v1/catalogs/${kind}${id ? `/${id}` : ''}`, {
+    mutationFn: ({ path, method, body }: MutationInput) =>
+      api(path, {
         method,
-        ...(name !== undefined ? { body: JSON.stringify({ name }) } : {}),
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       }),
+    onMutate: () => setError(''),
     onSuccess: async () => {
       setError('')
-      setEditing(null)
       setRemoving(null)
+      setMerging(null)
+      setMergeTarget('')
       await queryClient.invalidateQueries({
         queryKey: ['registration-catalogs'],
       })
@@ -66,18 +88,31 @@ export function CatalogsPage() {
       ),
   })
 
-  function add(event: FormEvent, kind: Kind) {
+  function addDepartment(event: FormEvent) {
     event.preventDefault()
     mutation.mutate(
-      { kind, method: 'POST', name: names[kind] },
-      { onSuccess: () => setNames((current) => ({ ...current, [kind]: '' })) }
+      {
+        path: '/api/v1/catalogs/departments',
+        method: 'POST',
+        body: { name: departmentName },
+      },
+      { onSuccess: () => setDepartmentName('') }
     )
   }
+
+  const groups = (catalogs.data?.regions ?? []).map((region) => ({
+    ...region,
+    compounds: (catalogs.data?.compounds ?? []).filter(
+      (item) => item.region === region.code
+    ),
+  }))
+  const regionLabel = (code: string) =>
+    catalogs.data?.regions.find((item) => item.code === code)?.label ?? code
 
   return (
     <ChurchPage
       title='Registration choices'
-      description='Manage compounds and departments available at registration.'
+      description='Compounds are created at registration. Merge duplicates and manage departments here.'
     >
       {error && (
         <p role='alert' className='mb-4 text-sm text-destructive'>
@@ -89,70 +124,93 @@ export function CatalogsPage() {
         error={catalogs.error}
         onRetry={() => void catalogs.refetch()}
       />
-      <div className='grid gap-5 lg:grid-cols-2'>
-        {(['compounds', 'departments'] as const).map((kind) => (
-          <Card key={kind}>
-            <CardHeader>
-              <CardTitle className='capitalize'>{kind}</CardTitle>
-              <CardDescription>
-                Deactivating an option prevents new registrations but keeps
-                existing records.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='space-y-4'>
-              <form
-                className='flex items-end gap-2'
-                onSubmit={(event) => add(event, kind)}
-              >
-                <div className='flex-1 space-y-1.5'>
-                  <Label htmlFor={`new-${kind}`}>
-                    New {kind === 'compounds' ? 'compound' : 'department'} name
-                  </Label>
-                  <Input
-                    id={`new-${kind}`}
-                    required
-                    maxLength={100}
-                    value={names[kind]}
-                    onChange={(event) =>
-                      setNames((current) => ({
-                        ...current,
-                        [kind]: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <Button type='submit' disabled={mutation.isPending}>
-                  Add
-                </Button>
-              </form>
+      <Card className='mb-5'>
+        <CardHeader>
+          <CardTitle>Compounds by region</CardTitle>
+          <CardDescription>
+            Every compound entered at registration is saved automatically under
+            its region. Rename, move, merge duplicates, or deactivate one here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className='space-y-5'>
+          {groups.map((group) => (
+            <section key={group.code} className='space-y-2'>
+              <div className='flex items-baseline justify-between gap-3'>
+                <h3 className='text-sm font-semibold'>{group.label}</h3>
+                <span className='text-xs text-muted-foreground'>
+                  {group.compounds.length} compound
+                  {group.compounds.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {group.compounds.length === 0 && (
+                <p className='rounded-lg border border-dashed p-3 text-sm text-muted-foreground'>
+                  No compounds saved under {group.label} yet.
+                </p>
+              )}
               <ul className='divide-y rounded-lg border'>
-                {catalogs.data?.[kind].map((entry) => (
+                {group.compounds.map((entry) => (
                   <li
                     className='flex flex-wrap items-center justify-between gap-2 px-3 py-2'
                     key={entry.id}
                   >
-                    {editing?.id === entry.id && editing.kind === kind ? (
+                    {editingCompound?.id === entry.id ? (
                       <form
-                        className='flex flex-1 items-center gap-2'
+                        className='flex flex-1 flex-wrap items-end gap-2'
                         onSubmit={(event) => {
                           event.preventDefault()
-                          mutation.mutate({
-                            kind,
-                            id: entry.id,
-                            method: 'PATCH',
-                            name: editing.name,
-                          })
+                          mutation.mutate(
+                            {
+                              path: `/api/v1/catalogs/compounds/${entry.id}`,
+                              method: 'PATCH',
+                              body: {
+                                name: compoundName,
+                                region: compoundRegion,
+                              },
+                            },
+                            { onSuccess: () => setEditingCompound(null) }
+                          )
                         }}
                       >
-                        <Input
-                          aria-label={`Rename ${entry.name}`}
-                          required
-                          maxLength={100}
-                          value={editing.name}
-                          onChange={(event) =>
-                            setEditing({ ...editing, name: event.target.value })
-                          }
-                        />
+                        <div className='min-w-40 flex-1 space-y-1'>
+                          <Label htmlFor={`compound-name-${entry.id}`}>
+                            Compound name
+                          </Label>
+                          <Input
+                            id={`compound-name-${entry.id}`}
+                            required
+                            maxLength={100}
+                            value={compoundName}
+                            onChange={(event) =>
+                              setCompoundName(event.target.value)
+                            }
+                          />
+                        </div>
+                        <div className='w-40 space-y-1'>
+                          <Label htmlFor={`compound-region-${entry.id}`}>
+                            Region
+                          </Label>
+                          <Select
+                            value={compoundRegion}
+                            onValueChange={setCompoundRegion}
+                          >
+                            <SelectTrigger
+                              id={`compound-region-${entry.id}`}
+                              className='w-full'
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(catalogs.data?.regions ?? []).map((region) => (
+                                <SelectItem
+                                  key={region.code}
+                                  value={region.code}
+                                >
+                                  {region.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <Button size='sm' disabled={mutation.isPending}>
                           Save
                         </Button>
@@ -160,28 +218,58 @@ export function CatalogsPage() {
                           type='button'
                           variant='outline'
                           size='sm'
-                          onClick={() => setEditing(null)}
+                          onClick={() => setEditingCompound(null)}
                         >
                           Cancel
                         </Button>
                       </form>
                     ) : (
                       <>
-                        <span className='text-sm'>{entry.name}</span>
-                        <div className='flex gap-2'>
+                        <div>
+                          <p className='text-sm'>{entry.name}</p>
+                          <p className='text-xs text-muted-foreground'>
+                            {entry.member_count} member
+                            {entry.member_count === 1 ? '' : 's'}
+                          </p>
+                        </div>
+                        <div className='flex flex-wrap gap-2'>
                           <Button
                             type='button'
                             size='sm'
                             variant='outline'
-                            onClick={() => setEditing({ ...entry, kind })}
+                            onClick={() => {
+                              setError('')
+                              setEditingCompound(entry)
+                              setCompoundName(entry.name)
+                              setCompoundRegion(entry.region)
+                            }}
                           >
-                            Rename
+                            Rename / move
                           </Button>
                           <Button
                             type='button'
                             size='sm'
                             variant='outline'
-                            onClick={() => setRemoving({ ...entry, kind })}
+                            onClick={() => {
+                              setError('')
+                              setMerging(entry)
+                              setMergeTarget('')
+                            }}
+                          >
+                            Merge
+                          </Button>
+                          <Button
+                            type='button'
+                            size='sm'
+                            variant='outline'
+                            onClick={() => {
+                              setError('')
+                              setRemoving({
+                                kind: 'compound',
+                                id: entry.id,
+                                name: entry.name,
+                              })
+                            }}
                           >
                             Deactivate
                           </Button>
@@ -191,28 +279,186 @@ export function CatalogsPage() {
                   </li>
                 ))}
               </ul>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            </section>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Departments</CardTitle>
+          <CardDescription>
+            Deactivating a department prevents new registrations but keeps
+            existing records.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className='space-y-4'>
+          <form className='flex items-end gap-2' onSubmit={addDepartment}>
+            <div className='flex-1 space-y-1.5'>
+              <Label htmlFor='new-department'>New department name</Label>
+              <Input
+                id='new-department'
+                required
+                maxLength={100}
+                value={departmentName}
+                onChange={(event) => setDepartmentName(event.target.value)}
+              />
+            </div>
+            <Button type='submit' disabled={mutation.isPending}>
+              Add
+            </Button>
+          </form>
+          <ul className='divide-y rounded-lg border'>
+            {(catalogs.data?.departments ?? []).map((entry) => (
+              <li
+                className='flex flex-wrap items-center justify-between gap-2 px-3 py-2'
+                key={entry.id}
+              >
+                {editingDepartment?.id === entry.id ? (
+                  <form
+                    className='flex flex-1 items-center gap-2'
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      mutation.mutate(
+                        {
+                          path: `/api/v1/catalogs/departments/${entry.id}`,
+                          method: 'PATCH',
+                          body: { name: departmentEditName },
+                        },
+                        { onSuccess: () => setEditingDepartment(null) }
+                      )
+                    }}
+                  >
+                    <Input
+                      aria-label={`Rename ${entry.name}`}
+                      required
+                      maxLength={100}
+                      value={departmentEditName}
+                      onChange={(event) =>
+                        setDepartmentEditName(event.target.value)
+                      }
+                    />
+                    <Button size='sm' disabled={mutation.isPending}>
+                      Save
+                    </Button>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      onClick={() => setEditingDepartment(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <span className='text-sm'>{entry.name}</span>
+                    <div className='flex gap-2'>
+                      <Button
+                        type='button'
+                        size='sm'
+                        variant='outline'
+                        onClick={() => {
+                          setEditingDepartment(entry)
+                          setDepartmentEditName(entry.name)
+                        }}
+                      >
+                        Rename
+                      </Button>
+                      <Button
+                        type='button'
+                        size='sm'
+                        variant='outline'
+                        onClick={() => {
+                          setError('')
+                          setRemoving({
+                            kind: 'department',
+                            id: entry.id,
+                            name: entry.name,
+                          })
+                        }}
+                      >
+                        Deactivate
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      <ConfirmDialog
+        open={!!merging}
+        onOpenChange={(open) => {
+          if (!open) setMerging(null)
+        }}
+        title={merging ? `Merge ${merging.name}?` : 'Merge compound?'}
+        desc='Current members and attendance snapshots move to the compound you choose. The merged compound is then deactivated.'
+        confirmText='Merge compound'
+        disabled={!mergeTarget}
+        isLoading={mutation.isPending}
+        handleConfirm={() => {
+          if (merging && mergeTarget)
+            mutation.mutate({
+              path: `/api/v1/catalogs/compounds/${merging.id}/merge`,
+              method: 'POST',
+              body: { intoId: mergeTarget },
+            })
+        }}
+      >
+        <div className='space-y-1.5'>
+          <Label htmlFor='merge-target'>Merge into</Label>
+          <Select value={mergeTarget} onValueChange={setMergeTarget}>
+            <SelectTrigger id='merge-target' className='w-full'>
+              <SelectValue placeholder='Choose the compound to keep' />
+            </SelectTrigger>
+            <SelectContent>
+              {(catalogs.data?.compounds ?? [])
+                .filter((item) => item.id !== merging?.id)
+                .map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.name} ({regionLabel(item.region)})
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {error && (
+          <p role='alert' className='text-sm text-destructive'>
+            {error}
+          </p>
+        )}
+      </ConfirmDialog>
+
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(open) => {
           if (!open) setRemoving(null)
         }}
-        title={removing ? `Deactivate ${removing.name}?` : 'Deactivate?'}
-        desc='Existing member records will keep this value, but it will no longer be available at registration.'
+        title={
+          removing
+            ? `Deactivate ${removing.name}?`
+            : 'Deactivate registration choice?'
+        }
+        desc='Existing member records will keep this value. If someone enters this name again at registration, it will be reactivated automatically.'
         confirmText='Deactivate'
         isLoading={mutation.isPending}
         handleConfirm={() => {
-          if (removing)
-            mutation.mutate({
-              kind: removing.kind,
-              id: removing.id,
-              method: 'DELETE',
-            })
+          if (!removing) return
+          mutation.mutate({
+            path: `/api/v1/catalogs/${removing.kind === 'compound' ? 'compounds' : 'departments'}/${removing.id}`,
+            method: 'DELETE',
+          })
         }}
-      />
+      >
+        {error && (
+          <p role='alert' className='text-sm text-destructive'>
+            {error}
+          </p>
+        )}
+      </ConfirmDialog>
     </ChurchPage>
   )
 }

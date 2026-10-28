@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/cmams-api'
 import { ThemeProvider } from '@/context/theme-provider'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { CardDownloads, CardsPage } from './cards'
+import { CatalogsPage } from './catalogs'
 import { CellsPage } from './cells'
 import { DashboardPage } from './dashboard'
 import { DeskPage } from './desk'
@@ -209,15 +210,23 @@ describe('CMAMS browser workflows', () => {
               {
                 id: '11111111-1111-4111-8111-111111111111',
                 name: 'Main Compound',
+                region: 'ACROSS',
               },
             ],
             departments: [],
+            regions: [
+              { code: 'ACROSS', label: 'Across' },
+              { code: 'NDAR', label: 'Ndar' },
+              { code: 'CHIKAM', label: 'Chikam' },
+              { code: 'HOSTEL', label: 'Hostel' },
+            ],
           })
         return jsonResponse({ services: [] })
       })
     )
     const screen = await renderWithShell(<DeskPage />)
     await expect.element(screen.getByLabelText('Email')).toBeVisible()
+    await expect.element(screen.getByLabelText('Region')).toBeVisible()
     await expect
       .element(screen.getByText('Compound', { exact: true }))
       .toBeVisible()
@@ -225,6 +234,49 @@ describe('CMAMS browser workflows', () => {
     await expect.element(screen.getByLabelText('Birth day')).toBeVisible()
     await expect
       .element(screen.getByLabelText('Birth year (optional)'))
+      .toBeVisible()
+  })
+
+  it('shows compounds grouped by region without an add-compound form', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          compounds: [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              name: 'Army Barracks',
+              region: 'NDAR',
+              is_active: true,
+              member_count: 2,
+            },
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              name: 'East Gate',
+              region: 'ACROSS',
+              is_active: true,
+              member_count: 0,
+            },
+          ],
+          departments: [{ id: 'dept', name: 'Choir' }],
+          regions: [
+            { code: 'ACROSS', label: 'Across' },
+            { code: 'NDAR', label: 'Ndar' },
+            { code: 'CHIKAM', label: 'Chikam' },
+            { code: 'HOSTEL', label: 'Hostel' },
+          ],
+        })
+      )
+    )
+    const screen = await renderWithShell(<CatalogsPage />)
+    await expect.element(screen.getByText('Army Barracks')).toBeVisible()
+    await expect.element(screen.getByText('2 members')).toBeVisible()
+    await expect
+      .element(screen.getByText('No compounds saved under Chikam yet.'))
+      .toBeVisible()
+    expect(screen.getByLabelText('New compound name').query()).toBeNull()
+    await expect
+      .element(screen.getByLabelText('New department name'))
       .toBeVisible()
   })
 

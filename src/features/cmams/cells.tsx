@@ -42,6 +42,7 @@ type Member = {
   phone_e164: string | null
   email: string | null
   compound_name: string | null
+  compound_region: string | null
   room: string | null
   birth_month: number | null
   birth_day: number | null
@@ -491,8 +492,11 @@ export function CellsPage() {
                       {person.phone_e164 ?? 'Not provided'}
                     </p>
                     <p>
-                      Compound: {person.compound_name ?? 'Not provided'} · Room:{' '}
-                      {person.room ?? 'Not provided'}
+                      Compound: {person.compound_name ?? 'Not provided'}
+                      {person.compound_region
+                        ? ` (${person.compound_region.charAt(0)}${person.compound_region.slice(1).toLowerCase()})`
+                        : ''}{' '}
+                      · Room: {person.room ?? 'Not provided'}
                     </p>
                     <p>
                       Birthday:{' '}
