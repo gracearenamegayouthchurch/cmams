@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { allow, maskPhone } from './rbac.js'
+import { allow, maskPhone, roles } from './rbac.js'
 import { hashPassword, verifyPassword, signSession, readSession } from './auth.js'
 
 const secret = 'a'.repeat(64)
 
 describe('staff security', () => {
-  it('denies scanner staff access to member search and reports', () => {
-    expect(allow('USHER_SCANNER', 'checkin')).toBe(true)
-    expect(allow('USHER_SCANNER', 'directory')).toBe(false)
-    expect(allow('USHER_SCANNER', 'export')).toBe(false)
+  it('lets the registration desk scan without report access', () => {
+    expect(allow('REGISTRATION_DESK', 'checkin')).toBe(true)
+    expect(allow('REGISTRATION_DESK', 'directory')).toBe(true)
+    expect(allow('REGISTRATION_DESK', 'export')).toBe(false)
     expect(allow('PASTOR_VIEWER', 'checkin')).toBe(false)
+  })
+
+  it('retires the usher role', () => {
+    expect(roles as readonly string[]).not.toContain('USHER_SCANNER')
   })
 
   it('keeps cell leaders out of global services and member reports', () => {

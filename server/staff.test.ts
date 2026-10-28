@@ -3,7 +3,8 @@ import { verifyPassword, hashPassword } from './auth.js'
 import { changeOwnPassword, createStaff, resetStaffPassword, updateStaff, validateNewStaff } from './staff.js'
 
 it('validates one of the five staff roles before opening a transaction', () => {
-  expect(() => validateNewStaff({ email: 'u@example.com', fullName: 'Usher Example', role: 'OWNER' })).toThrow()
+  expect(() => validateNewStaff({ email: 'u@example.com', fullName: 'Desk Example', role: 'OWNER' })).toThrow()
+  expect(() => validateNewStaff({ email: 'u@example.com', fullName: 'Desk Example', role: 'USHER_SCANNER' })).toThrow()
 })
 
 it('creates a staff account with a random one-time password and an audit record, never audit-log plaintext', async () => {
@@ -11,10 +12,10 @@ it('creates a staff account with a random one-time password and an audit record,
   let storedHash = ''
   const client = { query: async (sql: string, args?: unknown[]) => {
     calls.push({ sql, args })
-    if (sql.includes('INSERT INTO staff_users')) { storedHash = String(args?.[2]); return { rows: [{ id: 'new', email: 'new@example.com', role: 'USHER_SCANNER' }] } }
+    if (sql.includes('INSERT INTO staff_users')) { storedHash = String(args?.[2]); return { rows: [{ id: 'new', email: 'new@example.com', role: 'REGISTRATION_DESK' }] } }
     return { rows: [] }
   }, release: () => {} }
-  const result = await createStaff({ connect: async () => client } as never, { email: 'new@example.com', fullName: 'New Staff', role: 'USHER_SCANNER' }, 'admin')
+  const result = await createStaff({ connect: async () => client } as never, { email: 'new@example.com', fullName: 'New Staff', role: 'REGISTRATION_DESK' }, 'admin')
   expect(result.temporaryPassword).toHaveLength(32)
   expect(result.staff).not.toHaveProperty('password_hash')
   expect(await verifyPassword(result.temporaryPassword, storedHash)).toBe(true)
@@ -37,7 +38,7 @@ it('serializes admin changes and refuses to demote the last active admin without
     if (sql.includes('count(*)')) return { rows: [{ count: '1' }] }
     return { rows: [] }
   }, release: () => {} }
-  await expect(updateStaff({ connect: async () => client } as never, 'admin', { role: 'USHER_SCANNER' }, 'admin')).rejects.toMatchObject({ status: 409 })
+  await expect(updateStaff({ connect: async () => client } as never, 'admin', { role: 'REGISTRATION_DESK' }, 'admin')).rejects.toMatchObject({ status: 409 })
   expect(queries.some((sql) => sql.includes('pg_advisory_xact_lock'))).toBe(true)
   expect(queries).not.toContain(expect.stringContaining('UPDATE staff_users'))
 })

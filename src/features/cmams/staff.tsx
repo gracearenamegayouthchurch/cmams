@@ -30,7 +30,6 @@ type StaffEntry = Staff & {
   must_change_password: boolean
 }
 const roles: Staff['role'][] = [
-  'USHER_SCANNER',
   'REGISTRATION_DESK',
   'SERVICE_SUPERVISOR',
   'PASTOR_VIEWER',
@@ -46,7 +45,7 @@ export function StaffPage() {
   })
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<Staff['role']>('USHER_SCANNER')
+  const [role, setRole] = useState<Staff['role']>('REGISTRATION_DESK')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')

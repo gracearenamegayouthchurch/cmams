@@ -3,7 +3,6 @@ export type Staff = {
   full_name: string
   email: string
   role:
-    | 'USHER_SCANNER'
     | 'REGISTRATION_DESK'
     | 'SERVICE_SUPERVISOR'
     | 'ADMIN'

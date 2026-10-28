@@ -5,7 +5,6 @@ const roleLabels: Record<Staff['role'], string> = {
   ADMIN: 'Administrator',
   SERVICE_SUPERVISOR: 'Service Supervisor',
   REGISTRATION_DESK: 'Registration Desk',
-  USHER_SCANNER: 'Usher',
   PASTOR_VIEWER: 'Pastor',
   CELL_LEADER: 'Cell Leader',
 }

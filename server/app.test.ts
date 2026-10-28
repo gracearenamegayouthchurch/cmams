@@ -56,14 +56,14 @@ describe('API boundary', () => {
     let actorRole: 'SERVICE_SUPERVISOR' | 'ADMIN' = 'SERVICE_SUPERVISOR'
     mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
       ? [{ id: 'staff', full_name: 'Admin', email: 'admin@example.com', role: actorRole, is_active: true, session_version: 0 }]
-      : [{ id: 'other', email: 'other@example.com', full_name: 'Other', role: 'USHER_SCANNER', is_active: true }] }))
+      : [{ id: 'other', email: 'other@example.com', full_name: 'Other', role: 'REGISTRATION_DESK', is_active: true }] }))
     const supervisor = signSession({ id: 'staff', role: 'SERVICE_SUPERVISOR' }, secret)
     expect((await handleApi(new Request('https://church.example/api/v1/staff', { headers: { cookie: `cmams_session=${supervisor}` } }))).status).toBe(403)
     actorRole = 'ADMIN'
     const admin = signSession({ id: 'staff', role: 'ADMIN' }, secret)
     const response = await handleApi(new Request('https://church.example/api/v1/staff', { headers: { cookie: `cmams_session=${admin}` } }))
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ staff: [{ email: 'other@example.com', role: 'USHER_SCANNER' }] })
+    expect(await response.json()).toMatchObject({ staff: [{ email: 'other@example.com', role: 'REGISTRATION_DESK' }] })
   })
 
   it('blocks old sessions after a password reset or role change', async () => {
@@ -86,7 +86,7 @@ describe('API boundary', () => {
     process.env.SESSION_SECRET = secret
     const passwordHash = await hashPassword('temporary-secret-123')
     mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('WHERE email=lower')
-      ? [{ id: 'staff', full_name: 'New Staff', email: 'new@example.com', role: 'USHER_SCANNER', password_hash: passwordHash, session_version: 2, must_change_password: true }]
+      ? [{ id: 'staff', full_name: 'New Staff', email: 'new@example.com', role: 'REGISTRATION_DESK', password_hash: passwordHash, session_version: 2, must_change_password: true }]
       : [] }))
     const response = await handleApi(new Request('https://church.example/api/v1/login', {
       method: 'POST', headers: { origin: 'https://church.example', 'content-type': 'application/json' },
@@ -277,21 +277,21 @@ describe('API boundary', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ services: [] })
   })
-  it('lets an usher scan a card without permission to manage services', async () => {
+  it('lets the registration desk scan a card without permission to manage services', async () => {
     process.env.SESSION_SECRET = secret
     mocked.query.mockImplementation(async (sql: string) => ({
       rows: sql.includes('staff_users')
         ? [
             {
               id: 'staff',
-              full_name: 'Usher',
-              email: 'usher@example.com',
-              role: 'USHER_SCANNER',
+              full_name: 'Desk',
+              email: 'desk@example.com',
+              role: 'REGISTRATION_DESK',
             },
           ]
         : [{ outcome: { outcome: 'CHECKED_IN' } }],
     }))
-    const token = signSession({ id: 'staff', role: 'USHER_SCANNER' }, secret)
+    const token = signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)
     const response = await handleApi(
       new Request(
         'https://church.example/api/v1/services/9ff41440-0d63-428e-ad12-039d0c244ca8/check-ins',

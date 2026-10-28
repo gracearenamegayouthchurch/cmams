@@ -1,8 +1,12 @@
 import { expect, it } from 'vitest'
 import { visibleNavigation } from './access'
 
-it('shows an usher only the scan operation', () => {
-  expect(visibleNavigation('USHER_SCANNER')).toEqual(['Scan'])
+it('shows the registration desk scan, registration and members', () => {
+  expect(visibleNavigation('REGISTRATION_DESK')).toEqual([
+    'Scan',
+    'Registration',
+    'Members',
+  ])
   expect(visibleNavigation('PASTOR_VIEWER')).toEqual([
     'Dashboard',
     'Members',
@@ -14,7 +18,6 @@ it('shows an usher only the scan operation', () => {
 it('shows staff management only to administrators', () => {
   expect(visibleNavigation('ADMIN')).toContain('Staff')
   for (const role of [
-    'USHER_SCANNER',
     'REGISTRATION_DESK',
     'SERVICE_SUPERVISOR',
     'PASTOR_VIEWER',

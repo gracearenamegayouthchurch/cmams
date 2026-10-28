@@ -1,9 +1,8 @@
-export const roles = ['USHER_SCANNER', 'REGISTRATION_DESK', 'SERVICE_SUPERVISOR', 'ADMIN', 'PASTOR_VIEWER', 'CELL_LEADER'] as const
+export const roles = ['REGISTRATION_DESK', 'SERVICE_SUPERVISOR', 'ADMIN', 'PASTOR_VIEWER', 'CELL_LEADER'] as const
 export type StaffRole = (typeof roles)[number]
 export type Capability = 'checkin' | 'directory' | 'register' | 'manual' | 'cards' | 'services' | 'dashboard' | 'export' | 'staff' | 'cell_manage' | 'cell_read' | 'cell_meeting'
 
 const permissions: Record<StaffRole, readonly Capability[]> = {
-  USHER_SCANNER: ['checkin'],
   REGISTRATION_DESK: ['checkin', 'directory', 'register', 'manual'],
   SERVICE_SUPERVISOR: ['checkin', 'directory', 'register', 'manual', 'cards', 'services', 'dashboard'],
   ADMIN: ['checkin', 'directory', 'register', 'manual', 'cards', 'services', 'dashboard', 'export', 'staff', 'cell_manage', 'cell_read', 'cell_meeting'],

@@ -1,7 +1,6 @@
 import { type Staff } from '@/lib/cmams-api'
 
 export const homeForRole: Record<Staff['role'], string> = {
-  USHER_SCANNER: '/scan',
   REGISTRATION_DESK: '/desk',
   SERVICE_SUPERVISOR: '/services',
   ADMIN: '/dashboard',
@@ -10,7 +9,6 @@ export const homeForRole: Record<Staff['role'], string> = {
 }
 
 const access: Record<Staff['role'], string[]> = {
-  USHER_SCANNER: ['Scan'],
   REGISTRATION_DESK: ['Scan', 'Registration', 'Members'],
   SERVICE_SUPERVISOR: [
     'Dashboard',

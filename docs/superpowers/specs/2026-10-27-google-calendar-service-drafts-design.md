@@ -5,7 +5,7 @@
 1. An Admin creates **Sunday Youth Service, 9:00 AM** on a dedicated, private church Google Calendar.
 2. CMAMS reads that calendar automatically and shows **one draft**: “Sunday Youth Service — needs setup.” A draft is visible to staff who manage services, but it cannot be used for check-in.
 3. An Admin or Service Supervisor opens the draft, chooses the service category, sets check-in opening and closing times, and clicks **Publish**.
-4. The published service joins the existing Services list. At the allowed time, staff open check-in and ushers scan cards as usual.
+4. The published service joins the existing Services list. At the allowed time, staff open check-in and registration desk staff scan cards as usual.
 
 **No manual Import button is needed.** The existing “Schedule a service” form remains available when a service is not on Google Calendar.
 

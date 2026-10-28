@@ -289,8 +289,8 @@ describe('CMAMS browser workflows', () => {
             {
               staff: {
                 id: 'new',
-                email: 'usher@church.invalid',
-                role: 'USHER_SCANNER',
+                email: 'desk@church.invalid',
+                role: 'REGISTRATION_DESK',
               },
               temporaryPassword: 'temporary-long-password-1234',
             },
@@ -300,8 +300,8 @@ describe('CMAMS browser workflows', () => {
       })
     )
     const screen = await renderWithShell(<StaffPage />)
-    await userEvent.type(screen.getByLabelText('Full name'), 'New Usher')
-    await userEvent.type(screen.getByLabelText('Email'), 'usher@church.invalid')
+    await userEvent.type(screen.getByLabelText('Full name'), 'New Desk')
+    await userEvent.type(screen.getByLabelText('Email'), 'desk@church.invalid')
     await userEvent.click(
       screen.getByRole('button', { name: 'Create account' })
     )
@@ -351,7 +351,7 @@ describe('CMAMS browser workflows', () => {
     const screen = await renderWithShell(<LoginPage />)
     await userEvent.type(
       screen.getByLabelText(/staff email/i),
-      'usher@example.com'
+      'desk@example.com'
     )
     await userEvent.type(
       screen.getByLabelText(/^password$/i),
