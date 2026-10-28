@@ -24,6 +24,7 @@ import {
 } from './services.js'
 import { IdempotencyConflict, manualCheckin, scanCard } from './checkins.js'
 import { createCatalogEntry, deactivateCatalogEntry, listActiveCatalogs, renameCatalogEntry } from './catalogs.js'
+import { archiveCell, assignLeader, assignMember, CellAccessError, createCell, listCellMembers, listCells } from './cells.js'
 import { StaffError, changeOwnPassword, createStaff, listStaff, resetStaffPassword, updateStaff } from './staff.js'
 import {
   absenteeList,
@@ -247,8 +248,10 @@ export async function handleApi(request: Request): Promise<Response> {
         )
       }
     }
-    if (path === '/api/v1/services' && method === 'GET')
+    if (path === '/api/v1/services' && method === 'GET') {
+      if (staff.role === 'CELL_LEADER') return json({ error: 'Action not permitted' }, 403)
       return json({ services: await listServices(getDb()) })
+    }
     if (path === '/api/v1/services' && method === 'POST') {
       if (!allow(staff.role, 'services'))
         return json({ error: 'Action not permitted' }, 403)
@@ -362,6 +365,29 @@ export async function handleApi(request: Request): Promise<Response> {
       return json({ ok: true })
     }
 
+    if (path === '/api/v1/cells' && method === 'GET')
+      return json({ cells: await listCells(getDb(), staff) })
+    if (path === '/api/v1/cells' && method === 'POST')
+      return json({ cell: await createCell(getDb(), await request.json(), staff) }, 201)
+    const cellMembers = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})\/members$/i)
+    if (cellMembers && method === 'GET')
+      return json({ members: await listCellMembers(getDb(), staff, cellMembers[1]) })
+    if (cellMembers && method === 'POST') {
+      const body = z.object({ personId: z.uuid() }).parse(await request.json())
+      await assignMember(getDb(), cellMembers[1], body.personId, staff)
+      return json({ ok: true })
+    }
+    const cellLeader = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})\/leader$/i)
+    if (cellLeader && method === 'POST') {
+      const body = z.object({ staffId: z.uuid() }).parse(await request.json())
+      await assignLeader(getDb(), cellLeader[1], body.staffId, staff)
+      return json({ ok: true })
+    }
+    const cellArchive = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})\/archive$/i)
+    if (cellArchive && method === 'POST') {
+      await archiveCell(getDb(), cellArchive[1], staff)
+      return json({ ok: true })
+    }
     if (path === '/api/v1/catalogs' && method === 'GET') {
       if (!allow(staff.role, 'register') && !allow(staff.role, 'directory'))
         return json({ error: 'Action not permitted' }, 403)
@@ -435,6 +461,7 @@ export async function handleApi(request: Request): Promise<Response> {
       )
     return json({ error: 'Endpoint not implemented' }, 501)
   } catch (error) {
+    if (error instanceof CellAccessError) return json({ error: error.message }, 403)
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505')
       return json({ error: 'An entry with that name already exists' }, 409)
     if (error instanceof InvalidCatalogSelection) return json({ error: error.message }, 400)

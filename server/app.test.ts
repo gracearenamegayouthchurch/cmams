@@ -12,6 +12,20 @@ afterEach(() => {
 })
 
 describe('API boundary', () => {
+  it('never exposes a different cell member list to a cell leader', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
+      ? [{ id: 'staff', full_name: 'Leader', email: 'leader@example.org', role: 'CELL_LEADER', session_version: 0 }]
+      : [] }))
+    const token = signSession({ id: 'staff', role: 'CELL_LEADER' }, secret)
+    const headers = { cookie: `cmams_session=${token}` }
+    const result = await handleApi(new Request('https://church.example/api/v1/cells/11111111-1111-4111-8111-111111111111/members', { headers }))
+    expect(result.status).toBe(403)
+    expect(JSON.stringify(await result.json())).not.toContain('member_code')
+    const services = await handleApi(new Request('https://church.example/api/v1/services', { headers }))
+    expect(services.status).toBe(403)
+  })
+
   it('allows registration staff to read choices but not change the catalog', async () => {
     process.env.SESSION_SECRET = secret
     mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
