@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { renderCardPdf, renderCardPng } from './card-render'
+import {
+  renderBatchCardsPdf,
+  renderCardPdf,
+  renderCardPng,
+} from './card-render'
 
 const card = {
   memberCode: 'CM-1001',
@@ -13,5 +17,11 @@ describe('browser card rendering', () => {
     expect(png).toMatch(/^data:image\/png;base64,/)
     const pdf = await renderCardPdf(card)
     expect(new TextDecoder().decode(pdf.subarray(0, 5))).toBe('%PDF-')
+
+    const batchPdf = await renderBatchCardsPdf([
+      card,
+      { ...card, memberCode: 'CM-1002', shortCode: '3B2-K99' },
+    ])
+    expect(new TextDecoder().decode(batchPdf.subarray(0, 5))).toBe('%PDF-')
   })
 })

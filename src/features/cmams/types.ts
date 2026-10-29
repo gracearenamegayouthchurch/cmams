@@ -121,8 +121,9 @@ export type IssuedCard = {
   memberCode: string
   shortCode: string
   credential: string
+  memberName?: string
+  phone?: string | null
 }
-
 
 export type FirstTimerPerson = {
   id: string

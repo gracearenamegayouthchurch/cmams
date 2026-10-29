@@ -5,6 +5,7 @@ import {
   issueCard,
   revokeCard,
   listActiveCards,
+  listUnissuedPeople,
 } from './cards.js'
 
 it('creates an opaque, digest-only card record', () => {
@@ -37,6 +38,21 @@ it('never selects a token digest in staff card listings', async () => {
     } as never,
     'Ada'
   )
+  expect(statement).not.toContain('token_hash')
+})
+
+it('queries people without active cards for the unissued list', async () => {
+  let statement = ''
+  await listUnissuedPeople(
+    {
+      query: async (sql: string) => {
+        statement = sql
+        return { rows: [] }
+      },
+    } as never,
+    ''
+  )
+  expect(statement).toContain('NOT EXISTS')
   expect(statement).not.toContain('token_hash')
 })
 

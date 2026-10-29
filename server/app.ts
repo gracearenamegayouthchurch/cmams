@@ -17,7 +17,7 @@ import {
   listPeoplePaginated,
   registerPerson,
 } from './people.js'
-import { issueCard, revokeCard, listActiveCards } from './cards.js'
+import { issueCard, revokeCard, listActiveCards, listUnissuedPeople } from './cards.js'
 import {
   changeServiceStatus,
   createService,
@@ -195,6 +195,7 @@ export async function handleApi(request: Request): Promise<Response> {
         return json({ error: 'Action not permitted' }, 403)
       return json({
         cards: await listActiveCards(getDb(), url.searchParams.get('q') ?? ''),
+        unissued: await listUnissuedPeople(getDb(), url.searchParams.get('q') ?? ''),
       })
     }
     if (path === '/api/v1/dashboard' && method === 'GET') {

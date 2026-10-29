@@ -138,6 +138,26 @@ export function DeskPage() {
     setMessage('')
   }
 
+  function resetRegistrationForm() {
+    setFirstName('')
+    setLastName('')
+    setPhone('')
+    setEmail('')
+    setRegion('')
+    setCompoundName('')
+    setCompoundFocused(false)
+    setDepartmentId('')
+    setCellId('')
+    setRoom('')
+    setBirthMonth('')
+    setBirthDay('')
+    setBirthYear('')
+    setConsent(false)
+    setCandidates([])
+    setConfirmed(false)
+    setHouseholdId('')
+  }
+
   async function checkDuplicates() {
     if (!firstName.trim() || !lastName.trim()) {
       setError('Enter both first and last name to check existing records.')
@@ -228,7 +248,7 @@ export function DeskPage() {
         }),
       })
       setPerson(response.person)
-      setCandidates([])
+      resetRegistrationForm()
       void queryClient.invalidateQueries({
         queryKey: ['registration-catalogs'],
       })

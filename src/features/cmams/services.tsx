@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -75,6 +76,7 @@ export function ServicesPage() {
   const [scheduled, setScheduled] = useState<Date | undefined>()
   const [opens, setOpens] = useState<Date | undefined>()
   const [closes, setCloses] = useState<Date | undefined>()
+  const [closeTarget, setCloseTarget] = useState<Service | null>(null)
 
   const mutation = useMutation({
     mutationFn: ({
@@ -97,6 +99,9 @@ export function ServicesPage() {
   )?.[1]
   const failedService = services.data?.services.find(
     (item) => item.id === failedOpenId
+  )
+  const openService = services.data?.services.find(
+    (item) => item.status === 'CHECKIN_OPEN'
   )
 
   function applySundayPreset() {
@@ -324,6 +329,7 @@ export function ServicesPage() {
                         size='sm'
                         disabled={
                           mutation.isPending ||
+                          !!openService ||
                           now < Date.parse(service.checkin_opens_at) ||
                           now > Date.parse(service.checkin_closes_at)
                         }
@@ -352,25 +358,34 @@ export function ServicesPage() {
                           a new service to check in arrivals.
                         </p>
                       )}
+                      {openService && (
+                        <p className='text-xs text-muted-foreground sm:max-w-48'>
+                          Close {openService.name} before opening another
+                          service.
+                        </p>
+                      )}
                     </div>
                   )}
                   {service.status === 'CHECKIN_OPEN' && (
-                    <Button
-                      size='sm'
-                      variant='outline'
-                      disabled={mutation.isPending}
-                      onClick={() => {
-                        setMessage('')
-                        void mutation
-                          .mutateAsync({
-                            path: `/api/v1/services/${service.id}/close`,
-                            body: {},
-                          })
-                          .catch(() => {})
-                      }}
-                    >
-                      Close check-in
-                    </Button>
+                    <div className='space-y-1.5 sm:text-right'>
+                      <Button
+                        size='sm'
+                        variant='outline'
+                        disabled={mutation.isPending}
+                        onClick={() => {
+                          setMessage('')
+                          setCloseTarget(service)
+                        }}
+                      >
+                        Close check-in
+                      </Button>
+                      {now > Date.parse(service.checkin_closes_at) && (
+                        <p className='text-xs text-amber-700 sm:max-w-48 dark:text-amber-300'>
+                          The window has ended. Close check-in to lock the final
+                          count.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -378,6 +393,29 @@ export function ServicesPage() {
           ))}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={closeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !mutation.isPending) setCloseTarget(null)
+        }}
+        title={`Close check-in for ${closeTarget?.name ?? 'this service'}?`}
+        desc='Check-in will stop immediately. The eligible-member count for turnout will be locked at the number of active members registered before check-in opened. This cannot be undone.'
+        confirmText='Close check-in now'
+        destructive
+        isLoading={mutation.isPending}
+        handleConfirm={() => {
+          if (!closeTarget) return
+          setMessage('')
+          void mutation
+            .mutateAsync({
+              path: `/api/v1/services/${closeTarget.id}/close`,
+              body: {},
+            })
+            .catch(() => {})
+            .finally(() => setCloseTarget(null))
+        }}
+      />
     </ChurchPage>
   )
 }

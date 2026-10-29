@@ -62,7 +62,7 @@ async function renderCardCanvas(card: IssuedCard) {
 
   // Framed QR container
   const qrCanvas = document.createElement('canvas')
-  await QRCode.toCanvas(qrCanvas, card.credential, {
+  await QRCode.toCanvas(qrCanvas, card.credential || card.shortCode, {
     errorCorrectionLevel: 'H',
     margin: 2,
     width: qrSize,
@@ -75,19 +75,33 @@ async function renderCardCanvas(card: IssuedCard) {
   context.strokeRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24)
   context.drawImage(qrCanvas, qrX, qrY)
 
-  // Member code & fallback shortcode
+  // Member details & shortcode
   context.textAlign = 'center'
-  context.fillStyle = '#0c243a'
-  context.font = 'bold 42px Inter, Arial, sans-serif'
-  context.fillText(card.memberCode, cardWidth / 2, 760)
+  if (card.memberName) {
+    context.fillStyle = '#0c243a'
+    context.font = 'bold 36px Inter, Arial, sans-serif'
+    context.fillText(card.memberName, cardWidth / 2, 746)
 
-  context.fillStyle = '#0369a1'
-  context.font = 'bold 28px "Courier New", monospace'
-  context.fillText(card.shortCode, cardWidth / 2, 810)
+    context.fillStyle = '#334155'
+    context.font = 'bold 26px Inter, Arial, sans-serif'
+    context.fillText(card.memberCode, cardWidth / 2, 786)
+
+    context.fillStyle = '#0369a1'
+    context.font = 'bold 26px "Courier New", monospace'
+    context.fillText(card.shortCode, cardWidth / 2, 826)
+  } else {
+    context.fillStyle = '#0c243a'
+    context.font = 'bold 42px Inter, Arial, sans-serif'
+    context.fillText(card.memberCode, cardWidth / 2, 760)
+
+    context.fillStyle = '#0369a1'
+    context.font = 'bold 28px "Courier New", monospace'
+    context.fillText(card.shortCode, cardWidth / 2, 810)
+  }
 
   context.fillStyle = '#64748b'
   context.font = '18px Inter, Arial, sans-serif'
-  context.fillText('Present this card at service check-in', cardWidth / 2, 866)
+  context.fillText('Present this card at service check-in', cardWidth / 2, 868)
 
   // Crisp cut border for printed sheets
   context.strokeStyle = '#cbd5e1'
@@ -127,6 +141,92 @@ export async function renderCardPdf(card: IssuedCard) {
     height: pdfHeight,
   })
   return pdf.save()
+}
+
+export async function renderBatchCardsPdf(cards: IssuedCard[]) {
+  if (!cards.length) throw new Error('No cards selected for batch printing')
+  const { PDFDocument, rgb } = await import('pdf-lib')
+  const pdf = await PDFDocument.create()
+  pdf.setTitle('Grace Arena Member Cards Sheet')
+  pdf.setAuthor('Grace Arena Mega Youth Church')
+  pdf.setCreator('Grace Arena CMAMS')
+
+  const a4Width = 595.28
+  const a4Height = 841.89
+  const cardW = 194
+  const cardH = 248
+  const colGap = 36
+  const rowGap = 16
+  const totalGridW = 2 * cardW + colGap
+  const totalGridH = 3 * cardH + 2 * rowGap
+  const marginX = (a4Width - totalGridW) / 2
+  const marginY = (a4Height - totalGridH) / 2
+  const cardsPerPage = 6
+
+  for (let i = 0; i < cards.length; i += cardsPerPage) {
+    const page = pdf.addPage([a4Width, a4Height])
+    const batch = cards.slice(i, i + cardsPerPage)
+
+    for (let slot = 0; slot < batch.length; slot++) {
+      const card = batch[slot]
+      const pngBytes = dataUrlBytes(await renderCardPng(card))
+      const image = await pdf.embedPng(pngBytes)
+
+      const col = slot % 2
+      const row = Math.floor(slot / 2) // 0: top, 1: mid, 2: bottom
+      const x = marginX + col * (cardW + colGap)
+      const y = marginY + (2 - row) * (cardH + rowGap)
+
+      // Light cutting guideline rectangle
+      page.drawRectangle({
+        x: x - 1,
+        y: y - 1,
+        width: cardW + 2,
+        height: cardH + 2,
+        borderWidth: 0.5,
+        borderColor: rgb(0.8, 0.85, 0.9),
+      })
+
+      page.drawImage(image, {
+        x,
+        y,
+        width: cardW,
+        height: cardH,
+      })
+    }
+  }
+
+  return pdf.save()
+}
+
+export async function printCard(card: IssuedCard) {
+  const dataUrl = await renderCardPng(card)
+  const printWindow = window.open('', '_blank', 'width=550,height=750')
+  if (!printWindow) {
+    // Fallback if popups are blocked: hidden iframe
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = '0'
+    document.body.appendChild(iframe)
+    const doc = iframe.contentWindow?.document
+    if (doc) {
+      doc.open()
+      doc.write(
+        `<!DOCTYPE html><html><head><title>Print Card - ${card.memberCode}</title><style>@page{size:auto;margin:8mm}body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:320px;width:100%;height:auto;display:block;border-radius:8px}</style></head><body><img src="${dataUrl}" onload="window.print();" /></body></html>`
+      )
+      doc.close()
+      setTimeout(() => iframe.remove(), 60000)
+    }
+    return
+  }
+  printWindow.document.write(
+    `<!DOCTYPE html><html><head><title>Print Card - ${card.memberCode}</title><style>@page{size:auto;margin:8mm}body{margin:0;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#f8fafc}img{max-width:340px;width:100%;height:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1);border-radius:8px}@media print{body{background:transparent}img{box-shadow:none;max-width:3.2in}}</style></head><body><img src="${dataUrl}" onload="setTimeout(() => { window.print(); }, 250);" /></body></html>`
+  )
+  printWindow.document.close()
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

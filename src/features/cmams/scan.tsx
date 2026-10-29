@@ -84,7 +84,12 @@ export function ScanPage() {
   const openServices =
     services.data?.services.filter((item) => item.status === 'CHECKIN_OPEN') ??
     []
-  const activeId = serviceId || openServices[0]?.id || ''
+  const selectedOpen = openServices.some((item) => item.id === serviceId)
+  const activeId = selectedOpen
+    ? serviceId
+    : openServices.length === 1
+      ? openServices[0].id
+      : ''
 
   const checkIn = useCallback(
     async (credential: string) => {
@@ -307,6 +312,23 @@ export function ScanPage() {
                 setStatus(null)
               }}
             />
+            {openServices.length > 1 && !activeId && (
+              <div className='flex items-start gap-3 rounded-xl border border-amber-500/35 bg-amber-50/70 p-4 text-sm dark:bg-amber-950/30'>
+                <AlertTriangle
+                  className='mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400'
+                  aria-hidden='true'
+                />
+                <div>
+                  <p className='font-medium'>
+                    Choose the service you are checking into
+                  </p>
+                  <p className='mt-0.5 text-muted-foreground'>
+                    More than one check-in is open. Pick the correct service
+                    above before scanning.
+                  </p>
+                </div>
+              </div>
+            )}
             {openServices.length === 0 && (
               <div className='flex items-start gap-3 rounded-xl border border-amber-500/35 bg-amber-50/70 p-4 text-sm dark:bg-amber-950/30'>
                 <AlertTriangle

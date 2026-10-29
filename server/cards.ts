@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type pg from 'pg'
+import { maskPhone } from './rbac.js'
 
 const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 const shortCodeAttempts = 8
@@ -110,12 +111,54 @@ export async function listActiveCards(
   search: string
 ) {
   const result = await db.query(
-    `SELECT c.id,c.short_code,c.status,c.issued_at,p.id AS person_id,p.member_code,p.first_name,p.last_name
+    `SELECT c.id, c.short_code, c.status, c.issued_at,
+            p.id AS person_id, p.member_code, p.first_name, p.last_name, p.lifecycle_stage, p.phone_e164,
+            (SELECT count(*)::int FROM attendance_records a WHERE a.qr_card_id=c.id) AS scan_count,
+            (SELECT max(a.checked_in_at) FROM attendance_records a WHERE a.qr_card_id=c.id) AS last_scanned_at,
+            (SELECT s.full_name FROM staff_users s WHERE s.id=c.issued_by_staff_id) AS issued_by_name
     FROM qr_cards c JOIN people p ON p.id=c.person_id
     WHERE c.status='ACTIVE' AND p.deleted_at IS NULL
-      AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%')
+      AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%' OR c.short_code ILIKE '%' || $1 || '%')
     ORDER BY c.issued_at DESC LIMIT 100`,
     [search.slice(0, 80)]
   )
-  return result.rows
+  return result.rows.map(
+    ({
+      phone_e164,
+      ...row
+    }: Record<string, unknown> & { phone_e164: string | null }) => ({
+      ...row,
+      phone: maskPhone(phone_e164),
+      phone_e164,
+    })
+  )
+}
+
+export async function listUnissuedPeople(
+  db: Pick<pg.Pool, 'query'>,
+  search: string
+) {
+  const result = await db.query(
+    `SELECT p.id, p.member_code, p.first_name, p.last_name, p.lifecycle_stage, p.phone_e164, p.registered_at
+     FROM people p
+     WHERE p.deleted_at IS NULL
+       AND p.lifecycle_stage NOT IN ('ARCHIVED')
+       AND NOT EXISTS (
+         SELECT 1 FROM qr_cards c WHERE c.person_id=p.id AND c.status='ACTIVE'
+       )
+       AND ($1 = '' OR p.full_name_normalized ILIKE '%' || lower($1) || '%' OR p.member_code ILIKE '%' || $1 || '%')
+     ORDER BY p.registered_at DESC
+     LIMIT 100`,
+    [search.slice(0, 80)]
+  )
+  return result.rows.map(
+    ({
+      phone_e164,
+      ...row
+    }: Record<string, unknown> & { phone_e164: string | null }) => ({
+      ...row,
+      phone: maskPhone(phone_e164),
+      phone_e164,
+    })
+  )
 }

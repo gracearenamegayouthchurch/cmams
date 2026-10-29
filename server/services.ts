@@ -28,25 +28,48 @@ export class ServiceTransitionError extends Error {
   constructor(message: string, readonly code: string) { super(message) }
 }
 
-export async function changeServiceStatus(db: Pick<pg.Pool, 'query'>, serviceId: string, action: 'open' | 'close') {
-  const result = action === 'open'
-    ? await db.query(`UPDATE services SET status='CHECKIN_OPEN' WHERE id=$1 AND status='SCHEDULED'
-        AND now() BETWEEN checkin_opens_at AND checkin_closes_at RETURNING id,status`, [serviceId])
-    : await db.query(`UPDATE services s SET status='CHECKIN_CLOSED', locked_eligible_member_count=(
-        SELECT count(*) FROM people p WHERE p.lifecycle_stage='MEMBER' AND p.deleted_at IS NULL
-          AND p.registered_at <= s.checkin_opens_at)
-        WHERE s.id=$1 AND s.status='CHECKIN_OPEN' RETURNING id,status,locked_eligible_member_count`, [serviceId])
-  if (!result.rows.length) {
+export async function changeServiceStatus(db: Pick<pg.Pool, 'connect'>, serviceId: string, action: 'open' | 'close') {
+  const client = await db.connect()
+  try {
+    await client.query('BEGIN')
+    // Serialize open/close so two supervisors cannot open different services at once.
+    await client.query('SELECT pg_advisory_xact_lock(740001)')
     if (action === 'open') {
-      const current = (await db.query('SELECT status,checkin_opens_at,checkin_closes_at,now() AS db_now FROM services WHERE id=$1', [serviceId])).rows[0]
-      if (current?.status === 'SCHEDULED') {
-        if (new Date(current.db_now) < new Date(current.checkin_opens_at))
-          throw new ServiceTransitionError('The check-in window has not opened yet', 'WINDOW_NOT_STARTED')
-        if (new Date(current.db_now) > new Date(current.checkin_closes_at))
-          throw new ServiceTransitionError('The check-in window has already ended', 'WINDOW_ENDED')
-      }
+      const open = await client.query<{ id: string; name: string }>(
+        `SELECT id,name FROM services WHERE status='CHECKIN_OPEN' AND id<>$1 LIMIT 1`,
+        [serviceId]
+      )
+      if (open.rows.length)
+        throw new ServiceTransitionError(
+          `"${open.rows[0].name}" is already open. Close it before opening another service.`,
+          'ANOTHER_SERVICE_OPEN'
+        )
     }
-    throw new ServiceTransitionError('Invalid service transition', 'INVALID_STATE')
+    const result = action === 'open'
+      ? await client.query(`UPDATE services SET status='CHECKIN_OPEN' WHERE id=$1 AND status='SCHEDULED'
+          AND now() BETWEEN checkin_opens_at AND checkin_closes_at RETURNING id,status`, [serviceId])
+      : await client.query(`UPDATE services s SET status='CHECKIN_CLOSED', locked_eligible_member_count=(
+          SELECT count(*) FROM people p WHERE p.lifecycle_stage='MEMBER' AND p.deleted_at IS NULL
+            AND p.registered_at <= s.checkin_opens_at)
+          WHERE s.id=$1 AND s.status='CHECKIN_OPEN' RETURNING id,status,locked_eligible_member_count`, [serviceId])
+    if (!result.rows.length) {
+      if (action === 'open') {
+        const current = (await client.query('SELECT status,checkin_opens_at,checkin_closes_at,now() AS db_now FROM services WHERE id=$1', [serviceId])).rows[0]
+        if (current?.status === 'SCHEDULED') {
+          if (new Date(current.db_now) < new Date(current.checkin_opens_at))
+            throw new ServiceTransitionError('The check-in window has not opened yet', 'WINDOW_NOT_STARTED')
+          if (new Date(current.db_now) > new Date(current.checkin_closes_at))
+            throw new ServiceTransitionError('The check-in window has already ended', 'WINDOW_ENDED')
+        }
+      }
+      throw new ServiceTransitionError('Invalid service transition', 'INVALID_STATE')
+    }
+    await client.query('COMMIT')
+    return result.rows[0]
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
   }
-  return result.rows[0]
 }

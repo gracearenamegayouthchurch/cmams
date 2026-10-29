@@ -21,17 +21,43 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 12_000
+): Promise<T> {
   if (!path.startsWith('/api/v1/')) throw new Error('Unexpected API path')
-  const response = await fetch(path, {
-    credentials: 'same-origin',
-    cache: 'no-store',
-    ...init,
-    headers: {
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  })
+  const controller = new AbortController()
+  const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined
+  const abort = () => controller.abort()
+  if (init.signal) {
+    if (init.signal.aborted) abort()
+    else init.signal.addEventListener('abort', abort, { once: true })
+  }
+  let response: Response
+  try {
+    response = await fetch(path, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...(init.body ? { 'content-type': 'application/json' } : {}),
+        ...init.headers,
+      },
+    })
+  } catch (reason) {
+    if (controller.signal.aborted && !init.signal?.aborted)
+      throw new ApiError(
+        'The server did not respond. Check the connection and try again.',
+        0,
+        'TIMEOUT'
+      )
+    throw reason
+  } finally {
+    if (timer) clearTimeout(timer)
+    init.signal?.removeEventListener('abort', abort)
+  }
   if (!response.ok) {
     const result: unknown = await response.json().catch(() => null)
     const message =

@@ -7,7 +7,7 @@ import {
   createRouter,
 } from '@tanstack/react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render } from 'vitest-browser-react'
+import { cleanup, render } from 'vitest-browser-react'
 import { page, userEvent } from 'vitest/browser'
 import { ApiError } from '@/lib/cmams-api'
 import { ThemeProvider } from '@/context/theme-provider'
@@ -25,7 +25,8 @@ import { ScanPage } from './scan'
 import { ServicesPage } from './services'
 import { StaffPage } from './staff'
 
-afterEach(() => {
+afterEach(async () => {
+  await cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -371,6 +372,100 @@ describe('CMAMS browser workflows', () => {
       .toBeDisabled()
     await expect.element(screen.getByText(/Check-in opens on/i)).toBeVisible()
   })
+  it('confirms before closing check-in', async () => {
+    let closed = false
+    let closeRequests = 0
+    const opens = new Date(Date.now() - 60 * 60 * 1000)
+    const closes = new Date(Date.now() + 4 * 60 * 60 * 1000)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/close') && init?.method === 'POST') {
+          closeRequests++
+          closed = true
+          return jsonResponse({ service: { id: 'service', status: 'CHECKIN_CLOSED' } })
+        }
+        if (url === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: '9ff41440-0d63-428e-ad12-039d0c244ca8',
+                name: 'Sunday Service',
+                status: closed ? 'CHECKIN_CLOSED' : 'CHECKIN_OPEN',
+                category: 'SUNDAY_SERVICE',
+                scheduled_start_at: opens.toISOString(),
+                checkin_opens_at: opens.toISOString(),
+                checkin_closes_at: closes.toISOString(),
+                locked_eligible_member_count: closed ? 120 : null,
+              },
+            ],
+          })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<ServicesPage />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Close check-in' })
+    )
+    await expect
+      .element(
+        screen.getByRole('heading', {
+          name: 'Close check-in for Sunday Service?',
+        })
+      )
+      .toBeVisible()
+    expect(closeRequests).toBe(0)
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Close check-in now' })
+    )
+    await expect.element(screen.getByText('Check-in closed.')).toBeVisible()
+    expect(closeRequests).toBe(1)
+  })
+  it('asks which service to scan into when more than one check-in is open', async () => {
+    const opens = new Date(Date.now() - 60 * 60 * 1000)
+    const closes = new Date(Date.now() + 4 * 60 * 60 * 1000)
+    const service = (id: string, name: string) => ({
+      id,
+      name,
+      category: 'SUNDAY_SERVICE',
+      status: 'CHECKIN_OPEN',
+      scheduled_start_at: opens.toISOString(),
+      checkin_opens_at: opens.toISOString(),
+      checkin_closes_at: closes.toISOString(),
+      locked_eligible_member_count: null,
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              service('9ff41440-0d63-428e-ad12-039d0c244ca8', 'Sunday Service'),
+              service('11111111-1111-4111-8111-111111111111', 'Youth Service'),
+            ],
+          })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<ScanPage />)
+    await expect
+      .element(screen.getByText('Choose the service you are checking into'))
+      .toBeVisible()
+    await expect
+      .element(screen.getByRole('button', { name: 'Start camera' }))
+      .toBeDisabled()
+    await expect
+      .element(screen.getByRole('button', { name: /^check in$/i }))
+      .toBeDisabled()
+
+    await userEvent.click(screen.getByLabelText('Open service'))
+    await userEvent.click(page.getByRole('option', { name: /Sunday Service/ }))
+    await expect
+      .element(screen.getByRole('button', { name: 'Start camera' }))
+      .toBeEnabled()
+  })
   it('shows a clear sign-in error when credentials are rejected', async () => {
     vi.stubGlobal(
       'fetch',
@@ -431,6 +526,107 @@ describe('CMAMS browser workflows', () => {
 
     await expect.element(screen.getByText(/Ada Okafor/)).toBeVisible()
     await expect.element(screen.getByText(/Shares phone number/)).toBeVisible()
+  })
+
+  it('clears the registration form after a successful save while keeping the issued card', async () => {
+    const submissions: { confirmDistinct?: boolean }[] = []
+    let registered = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/v1/catalogs')
+          return jsonResponse({
+            compounds: [],
+            departments: [],
+            regions: [{ code: 'NDAR', label: 'Ndar' }],
+          })
+        if (url === '/api/v1/cells') return jsonResponse({ cells: [] })
+        if (url === '/api/v1/services') return jsonResponse({ services: [] })
+        if (url === '/api/v1/people/duplicates')
+          return jsonResponse({
+            matches: [
+              {
+                id: 'existing',
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                lifecycle_stage: 'MEMBER',
+                shared_phone: false,
+              },
+            ],
+          })
+        if (url === '/api/v1/people' && init?.method === 'POST') {
+          submissions.push(
+            JSON.parse(String(init.body)) as { confirmDistinct?: boolean }
+          )
+          registered++
+          return jsonResponse(
+            {
+              person: {
+                id: `person-${registered}`,
+                member_code: `CM-200${registered}`,
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                lifecycle_stage: 'FIRST_TIMER',
+              },
+            },
+            201
+          )
+        }
+        if (url.endsWith('/cards') && init?.method === 'POST')
+          return jsonResponse(
+            {
+              card: {
+                memberCode: `CM-200${registered}`,
+                shortCode: `CARD-${registered}`,
+                credential: 'cma://v1/abcdefghijklmnopqrstuv',
+              },
+            },
+            201
+          )
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<DeskPage />)
+    await userEvent.type(screen.getByLabelText('First name'), 'Ada')
+    await userEvent.type(screen.getByLabelText('Last name'), 'Okafor')
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.org')
+    await userEvent.click(screen.getByLabelText('Region'))
+    await userEvent.click(page.getByRole('option', { name: 'Ndar' }))
+    await userEvent.type(screen.getByLabelText('Compound'), 'Main')
+    await userEvent.click(screen.getByLabelText('Birth month'))
+    await userEvent.click(page.getByRole('option', { name: 'January' }))
+    await userEvent.type(screen.getByLabelText('Birth day'), '6')
+    await userEvent.click(
+      screen.getByLabelText('Person agrees to this privacy notice')
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Check for matches' })
+    )
+    await expect.element(screen.getByText(/Ada Okafor/)).toBeVisible()
+    await userEvent.click(
+      screen.getByLabelText(
+        'I checked the matches and confirm this is a different person'
+      )
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Register person' })
+    )
+    await expect.element(screen.getByText(/Card ready · CM-2001/)).toBeVisible()
+    await expect
+      .element(screen.getByText('Registered and check-in card generated.'))
+      .toBeVisible()
+    expect(submissions[0]).toMatchObject({ confirmDistinct: true })
+
+    await expect.element(screen.getByLabelText('First name')).toHaveValue('')
+    await expect.element(screen.getByLabelText('Email')).toHaveValue('')
+    await expect
+      .element(screen.getByLabelText('Person agrees to this privacy notice'))
+      .toHaveAttribute('aria-checked', 'false')
+    await expect
+      .element(screen.getByRole('button', { name: 'Register person' }))
+      .toBeDisabled()
   })
 
   it('toggles between new and existing members and checks an existing member in', async () => {
