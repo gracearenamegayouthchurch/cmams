@@ -188,7 +188,7 @@ export async function analyticsReport(
       : null,
   }))
 
-  const latest = trend.at(-1)
+  const latest = trend[trend.length - 1]
 
   return {
     service: {
