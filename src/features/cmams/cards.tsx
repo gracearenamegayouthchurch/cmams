@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
+  ArrowLeft,
   Check,
   CheckSquare,
   CreditCard,
@@ -122,7 +124,13 @@ export function buildWhatsAppShare(card: {
   }
 }
 
-export function CardDownloads({ card }: { card: IssuedCard }) {
+export function CardDownloads({
+  card,
+  onBack,
+}: {
+  card: IssuedCard
+  onBack?: () => void
+}) {
   const [preview, setPreview] = useState('')
   const [renderError, setRenderError] = useState('')
   const [pdfBusy, setPdfBusy] = useState(false)
@@ -186,9 +194,23 @@ export function CardDownloads({ card }: { card: IssuedCard }) {
     <Card className='border-sky-500/45 bg-sky-50/30 dark:bg-sky-950/20'>
       <CardHeader className='pb-3'>
         <div className='flex flex-wrap items-center justify-between gap-2'>
-          <CardTitle className='text-base'>
-            Card ready · {card.memberCode}
-          </CardTitle>
+          <div className='flex items-center gap-2'>
+            {onBack && (
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                className='h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground'
+                onClick={onBack}
+              >
+                <ArrowLeft className='size-3.5' />
+                <span>Back to cards</span>
+              </Button>
+            )}
+            <CardTitle className='text-base'>
+              Card ready · {card.memberCode}
+            </CardTitle>
+          </div>
           <Badge variant='outline' className='font-mono'>
             {card.shortCode}
           </Badge>
@@ -375,14 +397,25 @@ function CardPreviewModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-w-2xl'>
         <DialogHeader>
-          <div className='flex flex-wrap items-center gap-2'>
-            <DialogTitle>Member check-in card</DialogTitle>
+          <div className='flex items-center justify-between gap-2 pb-1'>
+            <Button
+              type='button'
+              variant='ghost'
+              size='sm'
+              className='-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground'
+              onClick={() => onOpenChange(false)}
+            >
+              <ArrowLeft className='size-3.5' />
+              <span>Back to cards</span>
+            </Button>
             <Badge variant='outline' className='font-mono'>
-              {card.short_code}
+              {currentCard.short_code}
             </Badge>
           </div>
+          <DialogTitle>Member check-in card</DialogTitle>
           <DialogDescription>
-            {card.first_name} {card.last_name} · {card.member_code}
+            {currentCard.first_name} {currentCard.last_name} ·{' '}
+            {currentCard.member_code}
           </DialogDescription>
         </DialogHeader>
 
@@ -511,8 +544,17 @@ function CardPreviewModal({
           </div>
         </div>
 
-        <DialogFooter className='mt-2'>
-          <Button variant='outline' onClick={() => onOpenChange(false)}>
+        <DialogFooter className='mt-2 flex items-center justify-between sm:justify-between'>
+          <Button
+            type='button'
+            variant='outline'
+            className='gap-1.5'
+            onClick={() => onOpenChange(false)}
+          >
+            <ArrowLeft className='size-3.5' />
+            <span>Back to cards</span>
+          </Button>
+          <Button type='button' onClick={() => onOpenChange(false)}>
             Close
           </Button>
         </DialogFooter>
@@ -661,6 +703,20 @@ export function CardsPage() {
       description='Issue new check-in cards, preview & print badges, share via WhatsApp, or manage card credentials.'
     >
       <div className='max-w-4xl space-y-6'>
+        <div className='flex items-center gap-2'>
+          <Button
+            variant='ghost'
+            size='sm'
+            asChild
+            className='-ml-2 h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground'
+          >
+            <Link to='/dashboard'>
+              <ArrowLeft className='size-3.5' />
+              <span>Back to dashboard</span>
+            </Link>
+          </Button>
+        </div>
+
         {mutationError && (
           <div
             role='alert'
@@ -670,7 +726,13 @@ export function CardsPage() {
           </div>
         )}
 
-        {issued && <CardDownloads key={issued.shortCode} card={issued} />}
+        {issued && (
+          <CardDownloads
+            key={issued.shortCode}
+            card={issued}
+            onBack={() => setIssued(null)}
+          />
+        )}
 
         <Card>
           <CardHeader>
