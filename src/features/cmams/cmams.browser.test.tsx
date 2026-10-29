@@ -1232,7 +1232,7 @@ describe('CMAMS browser workflows', () => {
       .toBeVisible()
   })
 
-  it('keeps the card preview back button on screen on a phone-sized viewport', async () => {
+  it('opens the card preview modal and returns with its back button', async () => {
     await page.viewport(390, 844)
     vi.stubGlobal(
       'fetch',
