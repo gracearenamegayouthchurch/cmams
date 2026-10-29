@@ -1232,6 +1232,51 @@ describe('CMAMS browser workflows', () => {
       .toBeVisible()
   })
 
+  it('keeps the card preview back button on screen on a phone-sized viewport', async () => {
+    await page.viewport(390, 844)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/v1/cards')) {
+          return jsonResponse({
+            cards: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                short_code: 'DST-0AT',
+                person_id: '9ff41440-0d63-428e-ad12-039d0c244ca8',
+                member_code: 'CM-1001',
+                first_name: 'Chisom',
+                last_name: 'Anigbo',
+                issued_at: '2026-10-29T03:00:00Z',
+                phone: null,
+                phone_e164: null,
+                lifecycle_stage: 'FIRST_TIMER',
+                scan_count: 0,
+                last_scanned_at: null,
+                issued_by_name: 'Mafuyai jonah Trimwet',
+              },
+            ],
+          })
+        }
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<CardsPage />)
+    await userEvent.click(screen.getByRole('button', { name: /^view$/i }))
+    await expect
+      .element(screen.getByRole('heading', { name: 'Member check-in card' }))
+      .toBeVisible()
+
+    const back = screen.getByRole('button', { name: 'Back to cards' }).first()
+    await userEvent.click(back)
+    await expect
+      .poll(() =>
+        screen.getByRole('heading', { name: 'Member check-in card' }).query()
+      )
+      .toBeNull()
+  })
+
   it('displays paginated members and opens individual attendance history when a member is selected', async () => {
     const personId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
     vi.stubGlobal(

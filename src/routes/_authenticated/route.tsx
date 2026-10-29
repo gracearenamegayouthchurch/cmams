@@ -11,6 +11,12 @@ export const Route = createFileRoute('/_authenticated')({
         !location.pathname.startsWith('/change-password')
       )
         throw redirect({ to: '/change-password' })
+      if (
+        session.staff.must_complete_profile &&
+        !location.pathname.startsWith('/complete-profile') &&
+        !location.pathname.startsWith('/change-password')
+      )
+        throw redirect({ to: '/complete-profile' })
       return session
     } catch (error) {
       if (error instanceof ApiError && error.status === 401)

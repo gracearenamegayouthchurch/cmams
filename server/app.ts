@@ -16,7 +16,9 @@ import {
   listFirstTimers,
   listPeoplePaginated,
   registerPerson,
+  resolveCompound,
 } from './people.js'
+import { compoundRegion } from './compound-regions.js'
 import { issueCard, revokeCard, listActiveCards, listUnissuedPeople } from './cards.js'
 import {
   changeServiceStatus,
@@ -78,11 +80,11 @@ async function currentStaff(request: Request) {
   const session = staffSession(request)
   if (!session) return null
   const result = await getDb().query(
-    'SELECT id, full_name, email, role, session_version, must_change_password FROM staff_users WHERE id=$1 AND is_active',
+    'SELECT id, full_name, email, role, session_version, must_change_password, must_complete_profile, person_id FROM staff_users WHERE id=$1 AND is_active',
     [session.id]
   )
   const staff = result.rows[0] as
-    | { id: string; full_name: string; email: string; role: Session['role']; session_version?: number; must_change_password?: boolean }
+    | { id: string; full_name: string; email: string; role: Session['role']; session_version?: number; must_change_password?: boolean; must_complete_profile?: boolean; person_id?: string | null }
     | undefined
   return staff && staff.role === session.role && Number(staff.session_version ?? 0) === (session.version ?? 0) ? staff : null
 }
@@ -167,6 +169,8 @@ export async function handleApi(request: Request): Promise<Response> {
           email: staff.email,
           role: staff.role,
           must_change_password: staff.must_change_password ?? false,
+          must_complete_profile: staff.must_complete_profile ?? false,
+          person_id: staff.person_id ?? null,
         },
       })
     if (method === 'POST' && path === '/api/v1/change-password') {
@@ -177,6 +181,181 @@ export async function handleApi(request: Request): Promise<Response> {
       return json({ ok: true }, 200, { 'set-cookie': `${cookieName}=${token}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=28800` })
     }
     if (staff.must_change_password) return json({ error: 'Change your temporary password to continue', code: 'PASSWORD_CHANGE_REQUIRED' }, 403)
+    if (path === '/api/v1/profile' && method === 'GET') {
+      const catalogs = await listActiveCatalogs(getDb())
+      let person: Record<string, unknown> | null = null
+      if (staff.person_id) {
+        const pResult = await getDb().query(
+          `SELECT p.id, p.member_code, p.first_name, p.last_name, p.middle_name, p.phone_e164, p.email,
+                  p.room, p.birth_month, p.birth_day, p.birth_year, p.academic_level,
+                  p.compound_id, c.name AS compound_name, c.region,
+                  pd.department_id, d.name AS department_name,
+                  q.short_code AS card_short_code
+           FROM people p
+           LEFT JOIN compounds c ON c.id = p.compound_id
+           LEFT JOIN person_departments pd ON pd.person_id = p.id AND pd.valid_to IS NULL
+           LEFT JOIN departments d ON d.id = pd.department_id
+           LEFT JOIN qr_cards q ON q.person_id = p.id AND q.status = 'ACTIVE'
+           WHERE p.id = $1 AND p.deleted_at IS NULL`,
+          [staff.person_id]
+        )
+        person = pResult.rows[0] ? (pResult.rows[0] as Record<string, unknown>) : null
+      }
+      return json({
+        staff: {
+          id: staff.id,
+          full_name: staff.full_name,
+          email: staff.email,
+          role: staff.role,
+          must_complete_profile: staff.must_complete_profile ?? false,
+          person_id: staff.person_id ?? null,
+        },
+        person,
+        catalogs,
+      })
+    }
+    if (path === '/api/v1/profile/skip' && method === 'POST') {
+      await getDb().query('UPDATE staff_users SET must_complete_profile = false WHERE id = $1', [staff.id])
+      return json({ ok: true })
+    }
+    if (path === '/api/v1/profile' && method === 'POST') {
+      const profileBody = z.object({
+        phone: z.string().trim().nullable().optional(),
+        departmentId: z.uuid().nullable().optional(),
+        region: compoundRegion,
+        compoundName: z.string().trim().min(1).max(100),
+        room: z.string().trim().max(100).nullable().optional(),
+        academicLevel: z.string().trim().max(50).nullable().optional(),
+        birthMonth: z.number().int().min(1).max(12),
+        birthDay: z.number().int().min(1).max(31),
+        birthYear: z.number().int().min(1900).max(new Date().getFullYear()).nullable().optional(),
+      }).parse(await request.json())
+
+      let formattedPhone: string | null = null
+      if (profileBody.phone) {
+        const cleaned = profileBody.phone.replace(/[\s\-()]/g, '')
+        if (cleaned.startsWith('+')) formattedPhone = cleaned
+        else if (cleaned.startsWith('0') && cleaned.length === 11) formattedPhone = `+234${cleaned.slice(1)}`
+        else if (cleaned.startsWith('234')) formattedPhone = `+${cleaned}`
+        else formattedPhone = cleaned ? `+${cleaned}` : null
+      }
+
+      const client = await getDb().connect()
+      try {
+        await client.query('BEGIN')
+        const compoundId = await resolveCompound(
+          client,
+          { name: profileBody.compoundName, region: profileBody.region },
+          staff.id
+        )
+
+        let personId = staff.person_id
+        if (!personId) {
+          const found = (await client.query('SELECT id FROM people WHERE lower(email) = lower($1) AND deleted_at IS NULL LIMIT 1', [staff.email])).rows[0] as { id: string } | undefined
+          if (found) personId = found.id
+        }
+
+        if (personId) {
+          await client.query(
+            `UPDATE people
+             SET phone_e164 = coalesce($1, phone_e164),
+                 compound_id = $2,
+                 room = $3,
+                 birth_month = $4,
+                 birth_day = $5,
+                 birth_year = coalesce($6, birth_year),
+                 academic_level = coalesce($7, academic_level),
+                 updated_at = now()
+             WHERE id = $8`,
+            [
+              formattedPhone,
+              compoundId,
+              profileBody.room || null,
+              profileBody.birthMonth,
+              profileBody.birthDay,
+              profileBody.birthYear || null,
+              profileBody.academicLevel || null,
+              personId,
+            ]
+          )
+        } else {
+          const nameParts = staff.full_name.trim().split(/\s+/)
+          const firstName = nameParts[0] || 'Staff'
+          const lastName = nameParts.slice(1).join(' ') || 'Member'
+          const created = await client.query(
+            `INSERT INTO people(
+               first_name, last_name, email, phone_e164,
+               compound_id, room, birth_month, birth_day, birth_year,
+               academic_level, lifecycle_stage, privacy_consent_at, registered_by_staff_id
+             ) VALUES (
+               $1, $2, lower($3), $4,
+               $5, $6, $7, $8, $9,
+               $10, 'MEMBER', now(), $11
+             ) RETURNING id, member_code`,
+            [
+              firstName,
+              lastName,
+              staff.email,
+              formattedPhone,
+              compoundId,
+              profileBody.room || null,
+              profileBody.birthMonth,
+              profileBody.birthDay,
+              profileBody.birthYear || null,
+              profileBody.academicLevel || null,
+              staff.id,
+            ]
+          )
+          personId = created.rows[0].id
+        }
+
+        if (profileBody.departmentId) {
+          await client.query(
+            'UPDATE person_departments SET valid_to = now() WHERE person_id = $1 AND valid_to IS NULL',
+            [personId]
+          )
+          await client.query(
+            'INSERT INTO person_departments(person_id, department_id, assigned_by_staff_id) VALUES ($1, $2, $3)',
+            [personId, profileBody.departmentId, staff.id]
+          )
+        }
+
+        await client.query(
+          'UPDATE staff_users SET person_id = $1, must_complete_profile = false WHERE id = $2',
+          [personId, staff.id]
+        )
+
+        const activeCard = (await client.query(
+          "SELECT id, short_code FROM qr_cards WHERE person_id = $1 AND status = 'ACTIVE' LIMIT 1",
+          [personId]
+        )).rows[0] as { id: string; short_code: string } | undefined
+
+        let cardShortCode = activeCard?.short_code
+        if (!activeCard) {
+          try {
+            const issued = await issueCard(getDb(), personId as string, staff.id, true)
+            cardShortCode = issued.shortCode
+          } catch {
+            // Card issuance non-fatal if card already exists
+          }
+        }
+
+        await client.query(
+          `INSERT INTO audit_logs(actor_staff_id, action_type, target_entity, target_id, new_state)
+           VALUES ($1, 'STAFF_PROFILE_COMPLETED', 'staff', $2, jsonb_build_object('person_id', $3::text))`,
+          [staff.id, staff.id, personId]
+        )
+
+        await client.query('COMMIT')
+        return json({ ok: true, personId, cardShortCode })
+      } catch (err) {
+        await client.query('ROLLBACK')
+        throw err
+      } finally {
+        client.release()
+      }
+    }
+
     if (path === '/api/v1/staff' && (method === 'GET' || method === 'POST')) {
       if (!allow(staff.role, 'staff')) return json({ error: 'Action not permitted' }, 403)
       if (method === 'GET') return json({ staff: await listStaff(getDb()) })

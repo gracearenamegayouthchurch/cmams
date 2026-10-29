@@ -9,6 +9,8 @@ export type Staff = {
     | 'PASTOR_VIEWER'
     | 'CELL_LEADER'
   must_change_password?: boolean
+  must_complete_profile?: boolean
+  person_id?: string | null
 }
 
 export class ApiError extends Error {

@@ -28,6 +28,12 @@ type StaffEntry = Staff & {
   created_at: string
   last_login_at: string | null
   must_change_password: boolean
+  must_complete_profile?: boolean
+  person_id?: string | null
+  member_code?: string | null
+  phone_e164?: string | null
+  academic_level?: string | null
+  department_name?: string | null
 }
 const roles: Staff['role'][] = [
   'REGISTRATION_DESK',
@@ -279,14 +285,35 @@ export function StaffPage() {
                 className='flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'
               >
                 <div className='min-w-0'>
-                  <p className='font-medium'>
-                    {person.full_name}{' '}
+                  <div className='flex flex-wrap items-center gap-1.5'>
+                    <p className='font-medium'>{person.full_name}</p>
                     <Badge variant='outline'>
                       {person.is_active ? 'Active' : 'Inactive'}
                     </Badge>
-                  </p>
+                    {person.department_name && (
+                      <Badge variant='secondary' className='text-xs'>
+                        {person.department_name}
+                      </Badge>
+                    )}
+                    {person.member_code ? (
+                      <Badge
+                        variant='outline'
+                        className='font-mono text-xs text-sky-700 dark:text-sky-300'
+                      >
+                        {person.member_code}
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant='outline'
+                        className='text-xs text-amber-600 dark:text-amber-400'
+                      >
+                        Profile pending
+                      </Badge>
+                    )}
+                  </div>
                   <p className='text-sm text-muted-foreground'>
                     {person.email} · {formatRole(person.role)}
+                    {person.academic_level ? ` · ${person.academic_level}` : ''}
                     {person.must_change_password
                       ? ' · Password change required'
                       : ''}

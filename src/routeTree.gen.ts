@@ -26,6 +26,7 @@ import { Route as AuthenticatedFirstTimersIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedDirectoryIndexRouteImport } from './routes/_authenticated/directory/index'
 import { Route as AuthenticatedDeskIndexRouteImport } from './routes/_authenticated/desk/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
+import { Route as AuthenticatedCompleteProfileIndexRouteImport } from './routes/_authenticated/complete-profile/index'
 import { Route as AuthenticatedChangePasswordIndexRouteImport } from './routes/_authenticated/change-password/index'
 import { Route as AuthenticatedCellsIndexRouteImport } from './routes/_authenticated/cells/index'
 import { Route as AuthenticatedCatalogsIndexRouteImport } from './routes/_authenticated/catalogs/index'
@@ -122,6 +123,12 @@ const AuthenticatedDashboardIndexRoute =
     path: '/dashboard/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedCompleteProfileIndexRoute =
+  AuthenticatedCompleteProfileIndexRouteImport.update({
+    id: '/complete-profile/',
+    path: '/complete-profile/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedChangePasswordIndexRoute =
   AuthenticatedChangePasswordIndexRouteImport.update({
     id: '/change-password/',
@@ -164,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/catalogs/': typeof AuthenticatedCatalogsIndexRoute
   '/cells/': typeof AuthenticatedCellsIndexRoute
   '/change-password/': typeof AuthenticatedChangePasswordIndexRoute
+  '/complete-profile/': typeof AuthenticatedCompleteProfileIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/desk/': typeof AuthenticatedDeskIndexRoute
   '/directory/': typeof AuthenticatedDirectoryIndexRoute
@@ -187,6 +195,7 @@ export interface FileRoutesByTo {
   '/catalogs': typeof AuthenticatedCatalogsIndexRoute
   '/cells': typeof AuthenticatedCellsIndexRoute
   '/change-password': typeof AuthenticatedChangePasswordIndexRoute
+  '/complete-profile': typeof AuthenticatedCompleteProfileIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/desk': typeof AuthenticatedDeskIndexRoute
   '/directory': typeof AuthenticatedDirectoryIndexRoute
@@ -212,6 +221,7 @@ export interface FileRoutesById {
   '/_authenticated/catalogs/': typeof AuthenticatedCatalogsIndexRoute
   '/_authenticated/cells/': typeof AuthenticatedCellsIndexRoute
   '/_authenticated/change-password/': typeof AuthenticatedChangePasswordIndexRoute
+  '/_authenticated/complete-profile/': typeof AuthenticatedCompleteProfileIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/desk/': typeof AuthenticatedDeskIndexRoute
   '/_authenticated/directory/': typeof AuthenticatedDirectoryIndexRoute
@@ -237,6 +247,7 @@ export interface FileRouteTypes {
     | '/catalogs/'
     | '/cells/'
     | '/change-password/'
+    | '/complete-profile/'
     | '/dashboard/'
     | '/desk/'
     | '/directory/'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/catalogs'
     | '/cells'
     | '/change-password'
+    | '/complete-profile'
     | '/dashboard'
     | '/desk'
     | '/directory'
@@ -284,6 +296,7 @@ export interface FileRouteTypes {
     | '/_authenticated/catalogs/'
     | '/_authenticated/cells/'
     | '/_authenticated/change-password/'
+    | '/_authenticated/complete-profile/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/desk/'
     | '/_authenticated/directory/'
@@ -426,6 +439,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/complete-profile/': {
+      id: '/_authenticated/complete-profile/'
+      path: '/complete-profile'
+      fullPath: '/complete-profile/'
+      preLoaderRoute: typeof AuthenticatedCompleteProfileIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/change-password/': {
       id: '/_authenticated/change-password/'
       path: '/change-password'
@@ -471,6 +491,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCatalogsIndexRoute: typeof AuthenticatedCatalogsIndexRoute
   AuthenticatedCellsIndexRoute: typeof AuthenticatedCellsIndexRoute
   AuthenticatedChangePasswordIndexRoute: typeof AuthenticatedChangePasswordIndexRoute
+  AuthenticatedCompleteProfileIndexRoute: typeof AuthenticatedCompleteProfileIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDeskIndexRoute: typeof AuthenticatedDeskIndexRoute
   AuthenticatedDirectoryIndexRoute: typeof AuthenticatedDirectoryIndexRoute
@@ -489,6 +510,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCatalogsIndexRoute: AuthenticatedCatalogsIndexRoute,
   AuthenticatedCellsIndexRoute: AuthenticatedCellsIndexRoute,
   AuthenticatedChangePasswordIndexRoute: AuthenticatedChangePasswordIndexRoute,
+  AuthenticatedCompleteProfileIndexRoute:
+    AuthenticatedCompleteProfileIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDeskIndexRoute: AuthenticatedDeskIndexRoute,
   AuthenticatedDirectoryIndexRoute: AuthenticatedDirectoryIndexRoute,

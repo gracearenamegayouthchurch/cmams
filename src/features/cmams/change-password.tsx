@@ -45,7 +45,11 @@ export function ChangePasswordPage() {
       setNext('')
       setConfirm('')
       await router.invalidate()
-      await navigate({ to: homeForRole[staff.role] as '/' })
+      if (staff.must_complete_profile) {
+        await navigate({ to: '/complete-profile' as '/' })
+      } else {
+        await navigate({ to: homeForRole[staff.role] as '/' })
+      }
     } catch (reason) {
       setError(
         reason instanceof Error
