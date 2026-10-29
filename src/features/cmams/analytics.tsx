@@ -1,14 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Activity,
-  CalendarDays,
-  Percent,
-  UserMinus,
-  UserRoundPlus,
-  Users,
-} from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -26,16 +20,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Area, AreaChart } from '@/components/charts/area-chart'
-import { Bar } from '@/components/charts/bar'
-import { BarChart } from '@/components/charts/bar-chart'
-import { BarYAxis } from '@/components/charts/bar-y-axis'
 import { ChartTooltip, type TooltipRow } from '@/components/charts/tooltip'
 import { XAxis } from '@/components/charts/x-axis'
-import {
-  formatDateTime,
-  formatServiceStatus,
-  serviceStatusClass,
-} from './format'
+import { formatServiceStatus, serviceStatusClass } from './format'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { regionLabel } from './regions'
@@ -43,6 +30,7 @@ import { ServicePicker } from './service-picker'
 import { type AnalyticsReport, type Service } from './types'
 
 const integer = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 
 function formatDay(iso: string, withYear = false) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -57,105 +45,127 @@ function formatLongDay(iso: string) {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
-    year: 'numeric',
   })
 }
 
-function horizontalAspectRatio(count: number) {
-  return `${Math.max(1.6, 3.2 - Math.min(count, 14) * 0.1)} / 1`
+function timeAgo(iso: string) {
+  const days = Math.round((Date.parse(iso) - Date.now()) / 86_400_000)
+  if (Math.abs(days) < 14) return relative.format(days, 'day')
+  if (Math.abs(days) < 60) return relative.format(Math.round(days / 7), 'week')
+  return relative.format(Math.round(days / 30), 'month')
 }
 
-function MetricCard({
-  title,
-  value,
-  detail,
-  icon: Icon,
-  accent,
-}: {
-  title: string
-  value: string
-  detail: string
-  icon: typeof Activity
-  accent: string
-}) {
+function initials(first: string, last: string) {
+  return `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase()
+}
+
+function Delta({ value, label }: { value: number | null; label: string }) {
+  if (value === null)
+    return <span className='text-xs text-muted-foreground'>{label}</span>
+  const Icon = value > 0 ? ArrowUpRight : value < 0 ? ArrowDownRight : Minus
   return (
-    <Card>
-      <CardHeader className='flex flex-row items-center justify-between pb-2'>
-        <CardTitle className='text-sm font-medium text-muted-foreground'>
-          {title}
-        </CardTitle>
-        <span
-          className={`flex size-8 items-center justify-center rounded-lg ${accent}`}
-        >
-          <Icon className='size-4' aria-hidden='true' />
-        </span>
-      </CardHeader>
-      <CardContent>
-        <p className='text-3xl font-semibold tabular-nums'>{value}</p>
-        <p className='mt-1 text-xs text-muted-foreground'>{detail}</p>
-      </CardContent>
-    </Card>
+    <span className='inline-flex items-center gap-1.5 text-xs text-muted-foreground'>
+      <span
+        className={cn(
+          'inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium tabular-nums',
+          value > 0 &&
+            'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+          value < 0 && 'bg-rose-500/10 text-rose-700 dark:text-rose-400',
+          value === 0 && 'bg-muted text-muted-foreground'
+        )}
+      >
+        <Icon className='size-3' aria-hidden='true' />
+        {value > 0 ? '+' : ''}
+        {integer.format(value)}
+      </span>
+      {label}
+    </span>
   )
 }
 
-function BreakdownTable({
-  rows,
-  firstColumn,
-  firstColumnLabel,
-  emptyLabel,
+function Stat({
+  label,
+  value,
+  children,
 }: {
-  rows: {
-    id: string
-    name: string
-    detail?: string
-    attendees: number
-    members: number
-    turnoutPercent: number
-  }[]
-  firstColumn: string
-  firstColumnLabel: string
-  emptyLabel: string
+  label: string
+  value: string
+  children: React.ReactNode
 }) {
-  if (rows.length === 0)
-    return (
-      <p className='rounded-xl border border-dashed bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground'>
-        {emptyLabel}
-      </p>
-    )
   return (
-    <div className='overflow-x-auto rounded-xl border'>
-      <Table>
-        <TableHeader>
-          <TableRow className='bg-muted/40'>
-            <TableHead>{firstColumnLabel}</TableHead>
-            {firstColumn === 'region' && <TableHead>Region</TableHead>}
-            <TableHead className='text-right'>Attendees</TableHead>
-            <TableHead className='text-right'>Members</TableHead>
-            <TableHead className='text-right'>Turnout</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.id}>
-              <TableCell className='font-medium'>{row.name}</TableCell>
-              {firstColumn === 'region' && (
-                <TableCell className='text-muted-foreground'>
-                  {row.detail}
-                </TableCell>
-              )}
-              <TableCell className='text-right tabular-nums'>
-                {integer.format(row.attendees)}
-              </TableCell>
-              <TableCell className='text-right text-muted-foreground tabular-nums'>
-                {integer.format(row.members)}
-              </TableCell>
-              <TableCell className='text-right tabular-nums'>
-                {row.turnoutPercent}%
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className='space-y-2 p-5'>
+      <p className='text-xs font-medium tracking-wide text-muted-foreground uppercase'>
+        {label}
+      </p>
+      <p className='text-3xl font-semibold tracking-tight tabular-nums'>
+        {value}
+      </p>
+      <div className='min-h-5'>{children}</div>
+    </div>
+  )
+}
+
+function Meter({ percent }: { percent: number }) {
+  return (
+    <div className='h-1.5 w-full overflow-hidden rounded-full bg-muted'>
+      <div
+        className='h-full rounded-full bg-sky-500 transition-[width] duration-500 dark:bg-sky-400'
+        style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+      />
+    </div>
+  )
+}
+
+type RankedRow = {
+  id: string
+  name: string
+  detail?: string
+  attendees: number
+  members: number
+  turnoutPercent: number
+}
+
+function RankedList({ rows }: { rows: RankedRow[] }) {
+  return (
+    <ul className='max-h-[26rem] divide-y overflow-y-auto'>
+      {rows.map((row, index) => (
+        <li key={row.id} className='flex items-center gap-4 py-3.5'>
+          <span className='w-5 shrink-0 text-right text-xs font-medium text-muted-foreground tabular-nums'>
+            {index + 1}
+          </span>
+          <div className='min-w-0 flex-1 space-y-2'>
+            <div className='flex items-baseline justify-between gap-3'>
+              <div className='min-w-0'>
+                <p className='truncate text-sm font-medium'>{row.name}</p>
+                {row.detail && (
+                  <p className='truncate text-xs text-muted-foreground'>
+                    {row.detail}
+                  </p>
+                )}
+              </div>
+              <div className='flex shrink-0 items-baseline gap-3 tabular-nums'>
+                <span className='text-xs text-muted-foreground'>
+                  {integer.format(row.attendees)} of{' '}
+                  {integer.format(row.members)}
+                </span>
+                <span className='w-12 text-right text-sm font-semibold'>
+                  {row.turnoutPercent}%
+                </span>
+              </div>
+            </div>
+            <Meter percent={row.turnoutPercent} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function EmptyNote({ title, text }: { title: string; text: string }) {
+  return (
+    <div className='rounded-lg border border-dashed px-4 py-8 text-center'>
+      <p className='text-sm font-medium'>{title}</p>
+      <p className='mt-1 text-xs text-muted-foreground'>{text}</p>
     </div>
   )
 }
@@ -185,35 +195,57 @@ export function AnalyticsPage() {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   })
+
   const data = report.data
+  const trend = data?.trend ?? []
+  const trendIndex = trend.findIndex((point) => point.id === data?.service.id)
+  const previous = trendIndex > 0 ? trend[trendIndex - 1] : null
   const visitors = data
     ? data.summary.first_timers + data.summary.returning_visitors
     : 0
-  const trendData =
-    data?.trend.map((point) => ({
-      date: new Date(point.date),
-      total: point.total,
-      members: point.members,
-    })) ?? []
-  const cellData =
-    data?.cells.map((cell) => ({
-      name: cell.name,
-      attendees: cell.attendees,
-      members: cell.members,
-      turnout: cell.turnoutPercent,
-    })) ?? []
-  const departmentData =
-    data?.departments.map((department) => ({
-      name: department.name,
-      attendees: department.attendees,
-      members: department.members,
-      turnout: department.turnoutPercent,
-    })) ?? []
+  const previousVisitors = previous
+    ? previous.firstTimers + previous.returningVisitors
+    : null
+  const average = trend.length
+    ? Math.round(trend.reduce((sum, p) => sum + p.total, 0) / trend.length)
+    : 0
+  const peak = trend.reduce((max, p) => Math.max(max, p.total), 0)
+  const trendData = trend.map((point) => ({
+    date: new Date(point.date),
+    total: point.total,
+    members: point.members,
+  }))
+  const compareLabel = previous
+    ? `vs ${formatDay(previous.date)}`
+    : 'No earlier Sunday'
 
   return (
     <ChurchPage
       title='Analytics'
-      description='Attendance trends, cell turnout, and Activity Group engagement for every service.'
+      description='Attendance, turnout, and follow-up for each service.'
+      actions={
+        services.data &&
+        serviceId && (
+          <div className='flex flex-wrap items-end gap-3'>
+            {selectedService && (
+              <Badge
+                variant='outline'
+                className={cn(
+                  'mb-2',
+                  serviceStatusClass(selectedService.status)
+                )}
+              >
+                {formatServiceStatus(selectedService.status)}
+              </Badge>
+            )}
+            <ServicePicker
+              services={services.data.services}
+              value={serviceId}
+              onChange={setSelected}
+            />
+          </div>
+        )
+      }
     >
       <QueryState
         loading={services.isPending}
@@ -221,501 +253,320 @@ export function AnalyticsPage() {
         onRetry={() => void services.refetch()}
       />
 
-      {services.data && (
+      {services.data && !serviceId && (
+        <QueryState
+          loading={false}
+          error={null}
+          empty
+          emptyTitle='No services scheduled'
+          emptyDescription='Analytics appear once a service has been scheduled.'
+        />
+      )}
+
+      {serviceId && (
+        <QueryState
+          loading={report.isPending}
+          error={report.error}
+          onRetry={() => void report.refetch()}
+        />
+      )}
+
+      {data && (
         <div className='space-y-6'>
-          {!serviceId ? (
-            <QueryState
-              loading={false}
-              error={null}
-              empty
-              emptyTitle='No services scheduled'
-              emptyDescription='Analytics become available once a service has been scheduled.'
-            />
-          ) : (
-            <>
-              <div className='flex flex-wrap items-end justify-between gap-4 rounded-xl border bg-card p-4 shadow-2xs'>
-                <ServicePicker
-                  services={services.data.services}
-                  value={serviceId}
-                  onChange={setSelected}
+          <Card className='gap-0 overflow-hidden py-0'>
+            <div className='grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-4 [&>*]:bg-card'>
+              <Stat
+                label='Total attendance'
+                value={integer.format(data.summary.total)}
+              >
+                <Delta
+                  value={previous ? data.summary.total - previous.total : null}
+                  label={compareLabel}
                 />
-                {selectedService && (
-                  <div className='flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground'>
-                    <Badge
-                      variant='outline'
-                      className={serviceStatusClass(selectedService.status)}
-                    >
-                      {formatServiceStatus(selectedService.status)}
-                    </Badge>
-                    <span>
-                      {formatDateTime(selectedService.scheduled_start_at)}
+              </Stat>
+              <Stat
+                label='Members present'
+                value={integer.format(data.summary.members)}
+              >
+                <Delta
+                  value={
+                    previous ? data.summary.members - previous.members : null
+                  }
+                  label={compareLabel}
+                />
+              </Stat>
+              <Stat label='Visitors' value={integer.format(visitors)}>
+                <span className='text-xs text-muted-foreground'>
+                  {integer.format(data.summary.first_timers)} first-time ·{' '}
+                  {integer.format(data.summary.returning_visitors)} returning
+                  {previousVisitors !== null && (
+                    <span className='sr-only'>
+                      {' '}
+                      ({integer.format(visitors - previousVisitors)} change)
                     </span>
-                  </div>
-                )}
+                  )}
+                </span>
+              </Stat>
+              <Stat
+                label='Member turnout'
+                value={`${data.summary.turnoutPercent}%`}
+              >
+                <div className='space-y-1.5 pt-1'>
+                  <Meter percent={data.summary.turnoutPercent} />
+                  <p className='text-xs text-muted-foreground'>
+                    {integer.format(data.summary.members)} of{' '}
+                    {integer.format(data.summary.eligible)} eligible members
+                  </p>
+                </div>
+              </Stat>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-4'>
+              <div className='space-y-1'>
+                <CardTitle>Sunday attendance trend</CardTitle>
+                <CardDescription>
+                  Total check-ins over the last {trend.length || 12} closed
+                  Sunday services.
+                </CardDescription>
               </div>
-
-              <QueryState
-                loading={report.isPending}
-                error={report.error}
-                onRetry={() => void report.refetch()}
-              />
-
-              {data && (
-                <>
-                  <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
-                    <MetricCard
-                      title='Total checked in'
-                      value={integer.format(data.summary.total)}
-                      detail='All recorded arrivals'
-                      icon={Activity}
-                      accent='bg-sky-500/10 text-sky-600 dark:text-sky-400'
-                    />
-                    <MetricCard
-                      title='Members present'
-                      value={integer.format(data.summary.members)}
-                      detail={`${integer.format(data.summary.eligible)} eligible members`}
-                      icon={Users}
-                      accent='bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                    />
-                    <MetricCard
-                      title='Visitors'
-                      value={integer.format(visitors)}
-                      detail='First-timers and returning visitors'
-                      icon={UserRoundPlus}
-                      accent='bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
-                    />
-                    <MetricCard
-                      title='Member turnout'
-                      value={`${data.summary.turnoutPercent}%`}
-                      detail={`${integer.format(data.summary.members)} of ${integer.format(data.summary.eligible)} members`}
-                      icon={Percent}
-                      accent='bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                    />
+              {trend.length > 0 && (
+                <dl className='flex gap-6 text-right'>
+                  <div>
+                    <dt className='text-xs text-muted-foreground'>Average</dt>
+                    <dd className='text-lg font-semibold tabular-nums'>
+                      {integer.format(average)}
+                    </dd>
                   </div>
-
-                  <Card>
-                    <CardHeader>
-                      <div className='flex flex-wrap items-start justify-between gap-3'>
-                        <div>
-                          <CardTitle>Sunday attendance trend</CardTitle>
-                          <CardDescription className='mt-1'>
-                            Total check-ins across the last 12 closed Sunday
-                            services.
-                          </CardDescription>
-                        </div>
-                        <Badge variant='secondary' className='tabular-nums'>
-                          {data.trend.length}{' '}
-                          {data.trend.length === 1 ? 'Sunday' : 'Sundays'}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className='space-y-4'>
-                      {trendData.length > 0 ? (
-                        <>
-                          <div
-                            role='img'
-                            aria-label='Area chart of total attendance across the last 12 closed Sunday services'
-                          >
-                            <AreaChart
-                              data={trendData}
-                              xDataKey='date'
-                              aspectRatio='3.5 / 1'
-                              margin={{
-                                top: 16,
-                                right: 16,
-                                bottom: 32,
-                                left: 16,
-                              }}
-                            >
-                              <Area
-                                dataKey='total'
-                                fadeEdges
-                                fill='var(--chart-1)'
-                                fillOpacity={0.6}
-                                gradientToOpacity={0}
-                                strokeWidth={2}
-                              />
-                              <XAxis numTicks={6} />
-                              <ChartTooltip
-                                rows={(point): TooltipRow[] => [
-                                  {
-                                    color: 'var(--chart-1)',
-                                    label: 'Total attendance',
-                                    value: integer.format(
-                                      Number(point.total ?? 0)
-                                    ),
-                                  },
-                                  {
-                                    color: 'var(--chart-2)',
-                                    label: 'Members',
-                                    value: integer.format(
-                                      Number(point.members ?? 0)
-                                    ),
-                                  },
-                                ]}
-                              />
-                            </AreaChart>
-                          </div>
-                          <div className='overflow-x-auto rounded-xl border'>
-                            <Table>
-                              <TableHeader>
-                                <TableRow className='bg-muted/40'>
-                                  <TableHead>Sunday</TableHead>
-                                  <TableHead className='text-right'>
-                                    Total
-                                  </TableHead>
-                                  <TableHead className='text-right'>
-                                    Members
-                                  </TableHead>
-                                  <TableHead className='text-right'>
-                                    Visitors
-                                  </TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {data.trend.map((point) => (
-                                  <TableRow key={point.id}>
-                                    <TableCell className='font-medium'>
-                                      {formatDay(point.date, true)}
-                                    </TableCell>
-                                    <TableCell className='text-right tabular-nums'>
-                                      {integer.format(point.total)}
-                                    </TableCell>
-                                    <TableCell className='text-right text-muted-foreground tabular-nums'>
-                                      {integer.format(point.members)}
-                                    </TableCell>
-                                    <TableCell className='text-right text-muted-foreground tabular-nums'>
-                                      {integer.format(
-                                        Math.max(0, point.total - point.members)
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </>
-                      ) : (
-                        <QueryState
-                          loading={false}
-                          error={null}
-                          empty
-                          emptyTitle='No closed Sunday services yet'
-                          emptyDescription='Close a Sunday service to start building the attendance trend.'
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  <div className='grid gap-6 xl:grid-cols-2'>
-                    <Card>
-                      <CardHeader>
-                        <div className='flex flex-wrap items-start justify-between gap-3'>
-                          <div>
-                            <CardTitle>Attendance by cell</CardTitle>
-                            <CardDescription className='mt-1'>
-                              Check-ins for this service grouped by each
-                              person&apos;s current cell.
-                            </CardDescription>
-                          </div>
-                          <Badge variant='secondary' className='tabular-nums'>
-                            {data.cells.length}{' '}
-                            {data.cells.length === 1 ? 'cell' : 'cells'}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className='space-y-4'>
-                        {cellData.length > 0 ? (
-                          <>
-                            <div
-                              role='img'
-                              aria-label={`Bar chart of attendance by cell for ${data.service.name}`}
-                            >
-                              <BarChart
-                                data={cellData}
-                                xDataKey='name'
-                                orientation='horizontal'
-                                aspectRatio={horizontalAspectRatio(
-                                  cellData.length
-                                )}
-                                margin={{
-                                  top: 8,
-                                  right: 16,
-                                  bottom: 16,
-                                  left: 112,
-                                }}
-                              >
-                                <Bar
-                                  dataKey='attendees'
-                                  fill='var(--chart-1)'
-                                  stroke='var(--chart-1)'
-                                  lineCap='round'
-                                />
-                                <BarYAxis maxWidth={100} />
-                                <ChartTooltip
-                                  showCrosshair={false}
-                                  rows={(point): TooltipRow[] => [
-                                    {
-                                      color: 'var(--chart-1)',
-                                      label: 'Attendees',
-                                      value: integer.format(
-                                        Number(point.attendees ?? 0)
-                                      ),
-                                    },
-                                    {
-                                      color: 'var(--chart-2)',
-                                      label: 'Cell members',
-                                      value: integer.format(
-                                        Number(point.members ?? 0)
-                                      ),
-                                    },
-                                    {
-                                      color: 'var(--muted-foreground)',
-                                      label: 'Turnout',
-                                      value: `${Number(point.turnout ?? 0)}%`,
-                                    },
-                                  ]}
-                                />
-                              </BarChart>
-                            </div>
-                            <BreakdownTable
-                              firstColumn='region'
-                              firstColumnLabel='Cell'
-                              emptyLabel='No active cells yet.'
-                              rows={data.cells.map((cell) => ({
-                                id: cell.id,
-                                name: cell.name,
-                                detail: regionLabel(cell.region),
-                                attendees: cell.attendees,
-                                members: cell.members,
-                                turnoutPercent: cell.turnoutPercent,
-                              }))}
-                            />
-                            {(data.unassigned.members > 0 ||
-                              data.unassigned.attendees > 0) && (
-                              <p className='text-xs text-muted-foreground'>
-                                {integer.format(data.unassigned.attendees)}{' '}
-                                {data.unassigned.attendees === 1
-                                  ? 'attendee is'
-                                  : 'attendees are'}{' '}
-                                not assigned to a cell (
-                                {integer.format(data.unassigned.members)} active{' '}
-                                {data.unassigned.members === 1
-                                  ? 'member'
-                                  : 'members'}
-                                ).
-                              </p>
-                            )}
-                          </>
-                        ) : (
-                          <QueryState
-                            loading={false}
-                            error={null}
-                            empty
-                            emptyTitle='No active cells yet'
-                            emptyDescription='Create cells and assign members to see cell-level attendance.'
-                          />
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <div className='flex flex-wrap items-start justify-between gap-3'>
-                          <div>
-                            <CardTitle>Attendance by Activity Group</CardTitle>
-                            <CardDescription className='mt-1'>
-                              Check-ins for this service grouped by current
-                              department.
-                            </CardDescription>
-                          </div>
-                          <Badge variant='secondary' className='tabular-nums'>
-                            {data.departments.length}{' '}
-                            {data.departments.length === 1 ? 'group' : 'groups'}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className='space-y-4'>
-                        {departmentData.length > 0 ? (
-                          <>
-                            <div
-                              role='img'
-                              aria-label={`Bar chart of attendance by Activity Group for ${data.service.name}`}
-                            >
-                              <BarChart
-                                data={departmentData}
-                                xDataKey='name'
-                                orientation='horizontal'
-                                aspectRatio={horizontalAspectRatio(
-                                  departmentData.length
-                                )}
-                                margin={{
-                                  top: 8,
-                                  right: 16,
-                                  bottom: 16,
-                                  left: 128,
-                                }}
-                              >
-                                <Bar
-                                  dataKey='attendees'
-                                  fill='var(--chart-1)'
-                                  stroke='var(--chart-1)'
-                                  lineCap='round'
-                                />
-                                <BarYAxis maxWidth={116} />
-                                <ChartTooltip
-                                  showCrosshair={false}
-                                  rows={(point): TooltipRow[] => [
-                                    {
-                                      color: 'var(--chart-1)',
-                                      label: 'Attendees',
-                                      value: integer.format(
-                                        Number(point.attendees ?? 0)
-                                      ),
-                                    },
-                                    {
-                                      color: 'var(--chart-2)',
-                                      label: 'Group members',
-                                      value: integer.format(
-                                        Number(point.members ?? 0)
-                                      ),
-                                    },
-                                    {
-                                      color: 'var(--muted-foreground)',
-                                      label: 'Turnout',
-                                      value: `${Number(point.turnout ?? 0)}%`,
-                                    },
-                                  ]}
-                                />
-                              </BarChart>
-                            </div>
-                            <BreakdownTable
-                              firstColumn='name'
-                              firstColumnLabel='Activity Group'
-                              emptyLabel='No active Activity Groups yet.'
-                              rows={data.departments.map((department) => ({
-                                id: department.id,
-                                name: department.name,
-                                attendees: department.attendees,
-                                members: department.members,
-                                turnoutPercent: department.turnoutPercent,
-                              }))}
-                            />
-                            <p className='text-xs text-muted-foreground'>
-                              Members may serve in more than one Activity Group.
-                            </p>
-                          </>
-                        ) : (
-                          <QueryState
-                            loading={false}
-                            error={null}
-                            empty
-                            emptyTitle='No active Activity Groups yet'
-                            emptyDescription='Add departments in Catalogs to see attendance by Activity Group.'
-                          />
-                        )}
-                      </CardContent>
-                    </Card>
+                  <div>
+                    <dt className='text-xs text-muted-foreground'>Peak</dt>
+                    <dd className='text-lg font-semibold tabular-nums'>
+                      {integer.format(peak)}
+                    </dd>
                   </div>
-
-                  <Card>
-                    <CardHeader>
-                      <div className='flex flex-wrap items-start justify-between gap-3'>
-                        <div>
-                          <div className='flex items-center gap-2.5'>
-                            <CardTitle>Absent members this week</CardTitle>
-                            <Badge variant='secondary' className='tabular-nums'>
-                              {data.absentees.length}{' '}
-                              {data.absentees.length === 1
-                                ? 'member'
-                                : 'members'}
-                            </Badge>
-                          </div>
-                          <CardDescription className='mt-1'>
-                            {data.latestSunday ? (
-                              <>
-                                Active members who did not attend{' '}
-                                {data.latestSunday.name} on{' '}
-                                {formatLongDay(data.latestSunday.date)}.
-                              </>
-                            ) : (
-                              'Active members who missed the latest closed Sunday service.'
-                            )}
-                          </CardDescription>
-                        </div>
-                        <span className='flex size-9 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400'>
-                          <UserMinus className='size-4' aria-hidden='true' />
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {data.absentees.length > 0 ? (
-                        <div className='overflow-x-auto rounded-xl border'>
-                          <Table>
-                            <TableHeader>
-                              <TableRow className='bg-muted/40'>
-                                <TableHead className='w-32'>Code</TableHead>
-                                <TableHead>Member</TableHead>
-                                <TableHead>Cell</TableHead>
-                                <TableHead className='text-right'>
-                                  Last attended
-                                </TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {data.absentees.map((person) => (
-                                <TableRow key={person.id}>
-                                  <TableCell className='font-mono text-xs font-medium text-muted-foreground'>
-                                    {person.member_code}
-                                  </TableCell>
-                                  <TableCell className='font-medium'>
-                                    {person.first_name} {person.last_name}
-                                  </TableCell>
-                                  <TableCell className='text-muted-foreground'>
-                                    {person.cell_name ?? 'No cell'}
-                                  </TableCell>
-                                  <TableCell className='text-right text-muted-foreground tabular-nums'>
-                                    {person.last_attended_at
-                                      ? formatDay(person.last_attended_at, true)
-                                      : 'No prior check-in'}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      ) : (
-                        <QueryState
-                          loading={false}
-                          error={null}
-                          empty
-                          emptyTitle={
-                            data.latestSunday
-                              ? 'Everyone was present'
-                              : 'No closed Sunday service yet'
-                          }
-                          emptyDescription={
-                            data.latestSunday
-                              ? 'No active members are missing from the latest closed Sunday service.'
-                              : 'Close a Sunday service to calculate the weekly absentee list.'
-                          }
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  <div className='flex items-center gap-2 text-xs text-muted-foreground'>
-                    <CalendarDays className='size-3.5' aria-hidden='true' />
-                    <span>
-                      Weekly absentees are based on the latest closed Sunday
-                      service. Activity Groups use current department
-                      assignments.
-                    </span>
-                  </div>
-                </>
+                </dl>
               )}
-            </>
-          )}
+            </CardHeader>
+            <CardContent>
+              {trendData.length > 0 ? (
+                <>
+                  <div
+                    role='img'
+                    aria-label='Area chart of total attendance across recent closed Sunday services'
+                  >
+                    <AreaChart
+                      data={trendData}
+                      xDataKey='date'
+                      aspectRatio='4 / 1'
+                      margin={{ top: 12, right: 12, bottom: 28, left: 12 }}
+                    >
+                      <Area
+                        dataKey='total'
+                        fadeEdges
+                        fill='var(--chart-1)'
+                        fillOpacity={0.6}
+                        gradientToOpacity={0}
+                        strokeWidth={2}
+                      />
+                      <XAxis numTicks={6} />
+                      <ChartTooltip
+                        rows={(point): TooltipRow[] => [
+                          {
+                            color: 'var(--chart-1)',
+                            label: 'Total',
+                            value: integer.format(Number(point.total ?? 0)),
+                          },
+                          {
+                            color: 'var(--chart-2)',
+                            label: 'Members',
+                            value: integer.format(Number(point.members ?? 0)),
+                          },
+                        ]}
+                      />
+                    </AreaChart>
+                  </div>
+                  <table className='sr-only'>
+                    <caption>Sunday attendance by date</caption>
+                    <thead>
+                      <tr>
+                        <th>Sunday</th>
+                        <th>Total</th>
+                        <th>Members</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trend.map((point) => (
+                        <tr key={point.id}>
+                          <td>{formatDay(point.date, true)}</td>
+                          <td>{point.total}</td>
+                          <td>{point.members}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : (
+                <EmptyNote
+                  title='No closed Sunday services yet'
+                  text='The trend appears after the first Sunday service is closed.'
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <div className='grid gap-6 xl:grid-cols-2'>
+            <Card>
+              <CardHeader className='space-y-1'>
+                <CardTitle>Attendance by cell</CardTitle>
+                <CardDescription>
+                  Turnout for this service by each person&apos;s cell.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className='space-y-3'>
+                {data.cells.length > 0 ? (
+                  <RankedList
+                    rows={data.cells.map((cell) => ({
+                      id: cell.id,
+                      name: cell.name,
+                      detail: regionLabel(cell.region),
+                      attendees: cell.attendees,
+                      members: cell.members,
+                      turnoutPercent: cell.turnoutPercent,
+                    }))}
+                  />
+                ) : (
+                  <EmptyNote
+                    title='No active cells'
+                    text='Create cells and assign members to see cell turnout.'
+                  />
+                )}
+                {(data.unassigned.members > 0 ||
+                  data.unassigned.attendees > 0) && (
+                  <p className='rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground'>
+                    {integer.format(data.unassigned.attendees)}{' '}
+                    {data.unassigned.attendees === 1
+                      ? 'attendee is'
+                      : 'attendees are'}{' '}
+                    not assigned to a cell ·{' '}
+                    {integer.format(data.unassigned.members)} unassigned{' '}
+                    {data.unassigned.members === 1 ? 'member' : 'members'}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className='space-y-1'>
+                <CardTitle>Attendance by Activity Group</CardTitle>
+                <CardDescription>
+                  Turnout for this service by department. Members can belong to
+                  more than one group.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {data.departments.length > 0 ? (
+                  <RankedList
+                    rows={data.departments.map((department) => ({
+                      id: department.id,
+                      name: department.name,
+                      attendees: department.attendees,
+                      members: department.members,
+                      turnoutPercent: department.turnoutPercent,
+                    }))}
+                  />
+                ) : (
+                  <EmptyNote
+                    title='No active Activity Groups'
+                    text='Add departments in Catalogs to see group turnout.'
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-3'>
+              <div className='space-y-1'>
+                <CardTitle>Absent members this week</CardTitle>
+                <CardDescription>
+                  {data.latestSunday
+                    ? `Active members who missed ${data.latestSunday.name} on ${formatLongDay(data.latestSunday.date)}.`
+                    : 'Active members who missed the latest closed Sunday service.'}
+                </CardDescription>
+              </div>
+              {data.absentees.length > 0 && (
+                <Badge variant='secondary' className='tabular-nums'>
+                  {integer.format(data.absentees.length)} to follow up
+                </Badge>
+              )}
+            </CardHeader>
+            <CardContent>
+              {data.absentees.length > 0 ? (
+                <div className='max-h-[28rem] overflow-y-auto rounded-lg border'>
+                  <Table>
+                    <TableHeader className='sticky top-0 z-10 bg-card'>
+                      <TableRow>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Cell</TableHead>
+                        <TableHead className='text-right'>
+                          Last attended
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.absentees.map((person) => (
+                        <TableRow key={person.id}>
+                          <TableCell>
+                            <div className='flex items-center gap-3'>
+                              <span className='flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground'>
+                                {initials(person.first_name, person.last_name)}
+                              </span>
+                              <div className='min-w-0'>
+                                <p className='truncate font-medium'>
+                                  {person.first_name} {person.last_name}
+                                </p>
+                                <p className='font-mono text-xs text-muted-foreground'>
+                                  {person.member_code}
+                                </p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className='text-muted-foreground'>
+                            {person.cell_name ?? '—'}
+                          </TableCell>
+                          <TableCell className='text-right text-muted-foreground tabular-nums'>
+                            {person.last_attended_at ? (
+                              <span
+                                title={formatDay(person.last_attended_at, true)}
+                              >
+                                {timeAgo(person.last_attended_at)}
+                              </span>
+                            ) : (
+                              'Never'
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyNote
+                  title={
+                    data.latestSunday
+                      ? 'Everyone was present'
+                      : 'No closed Sunday service yet'
+                  }
+                  text={
+                    data.latestSunday
+                      ? 'No active members missed the latest Sunday service.'
+                      : 'The absentee list appears after a Sunday service is closed.'
+                  }
+                />
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </ChurchPage>
