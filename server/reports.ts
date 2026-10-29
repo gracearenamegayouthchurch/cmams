@@ -30,6 +30,28 @@ export async function dashboardSummary(db: Pick<pg.Pool, 'query'>, serviceId: st
   return { ...row, turnoutPercent: turnoutPercent(Number(row.members), Number(row.eligible)) }
 }
 
+export async function dashboardTrend(db: Pick<pg.Pool, 'query'>, serviceId: string) {
+  const result = await db.query(`SELECT s.id,s.name,s.status,s.scheduled_start_at,
+    count(a.id)::int AS total,
+    count(a.id) FILTER (WHERE a.snapshot_stage='MEMBER' AND p.registered_at <= s.checkin_opens_at)::int AS members,
+    count(a.id) FILTER (WHERE a.snapshot_stage='FIRST_TIMER')::int AS first_timers,
+    count(a.id) FILTER (WHERE a.snapshot_stage='RETURNING_VISITOR')::int AS returning_visitors,
+    coalesce(s.locked_eligible_member_count, (
+      SELECT count(*)::int FROM people m WHERE m.lifecycle_stage='MEMBER' AND m.deleted_at IS NULL
+        AND m.registered_at <= s.checkin_opens_at)) AS eligible
+    FROM services s LEFT JOIN attendance_records a ON a.service_id=s.id
+    LEFT JOIN people p ON p.id=a.person_id
+    WHERE (s.status IN ('CHECKIN_OPEN','CHECKIN_CLOSED')
+      AND s.scheduled_start_at <= coalesce((SELECT scheduled_start_at FROM services WHERE id=$1), now()))
+      OR s.id=$1
+    GROUP BY s.id
+    ORDER BY s.scheduled_start_at DESC LIMIT 12`, [serviceId])
+  return result.rows.reverse().map((row) => ({
+    ...row,
+    turnoutPercent: turnoutPercent(Number(row.members), Number(row.eligible)),
+  }))
+}
+
 export async function absenteeList(db: Pick<pg.Pool, 'query'>, consecutive = 2) {
   const result = await db.query(`WITH recent AS (
     SELECT id,scheduled_start_at FROM services WHERE category='SUNDAY_SERVICE' AND status='CHECKIN_CLOSED'

@@ -42,6 +42,7 @@ import {
   auditExport,
   csvRows,
   dashboardSummary,
+  dashboardTrend,
 } from './reports.js'
 import { analyticsReport } from './analytics.js'
 
@@ -201,7 +202,7 @@ export async function handleApi(request: Request): Promise<Response> {
       const id = z.uuid().parse(url.searchParams.get('serviceId'))
       const summary = await dashboardSummary(getDb(), id)
       return summary
-        ? json({ summary })
+        ? json({ summary, trend: await dashboardTrend(getDb(), id) })
         : json({ error: 'Service not found' }, 404)
     }
     if (path === '/api/v1/analytics' && method === 'GET') {

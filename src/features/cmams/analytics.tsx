@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -23,6 +22,7 @@ import { Area, AreaChart } from '@/components/charts/area-chart'
 import { ChartTooltip, type TooltipRow } from '@/components/charts/tooltip'
 import { XAxis } from '@/components/charts/x-axis'
 import { formatServiceStatus, serviceStatusClass } from './format'
+import { KpiSparklines, type KpiMetric } from './kpi-sparklines'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { regionLabel } from './regions'
@@ -57,52 +57,6 @@ function timeAgo(iso: string) {
 
 function initials(first: string, last: string) {
   return `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase()
-}
-
-function Delta({ value, label }: { value: number | null; label: string }) {
-  if (value === null)
-    return <span className='text-xs text-muted-foreground'>{label}</span>
-  const Icon = value > 0 ? ArrowUpRight : value < 0 ? ArrowDownRight : Minus
-  return (
-    <span className='inline-flex items-center gap-1.5 text-xs text-muted-foreground'>
-      <span
-        className={cn(
-          'inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-medium tabular-nums',
-          value > 0 &&
-            'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-          value < 0 && 'bg-rose-500/10 text-rose-700 dark:text-rose-400',
-          value === 0 && 'bg-muted text-muted-foreground'
-        )}
-      >
-        <Icon className='size-3' aria-hidden='true' />
-        {value > 0 ? '+' : ''}
-        {integer.format(value)}
-      </span>
-      {label}
-    </span>
-  )
-}
-
-function Stat({
-  label,
-  value,
-  children,
-}: {
-  label: string
-  value: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className='space-y-2 p-5'>
-      <p className='text-xs font-medium tracking-wide text-muted-foreground uppercase'>
-        {label}
-      </p>
-      <p className='text-3xl font-semibold tracking-tight tabular-nums'>
-        {value}
-      </p>
-      <div className='min-h-5'>{children}</div>
-    </div>
-  )
 }
 
 function Meter({ percent }: { percent: number }) {
@@ -170,6 +124,49 @@ function EmptyNote({ title, text }: { title: string; text: string }) {
   )
 }
 
+function buildAnalyticsKpiSeries(data: AnalyticsReport) {
+  const serviceTime = Date.parse(data.service.scheduled_start_at)
+  const eligible = data.summary.eligible
+  const currentRow = {
+    date: new Date(data.service.scheduled_start_at),
+    total: data.summary.total,
+    members: data.summary.members,
+    visitors: data.summary.first_timers + data.summary.returning_visitors,
+    turnoutPercent: data.summary.turnoutPercent,
+  }
+
+  const priorRows = data.trend
+    .filter(
+      (point) =>
+        point.id !== data.service.id && Date.parse(point.date) < serviceTime
+    )
+    .map((point) => ({
+      date: new Date(point.date),
+      total: point.total,
+      members: point.members,
+      visitors: point.firstTimers + point.returningVisitors,
+      turnoutPercent:
+        eligible > 0
+          ? Math.min(100, Math.round((point.members * 1000) / eligible) / 10)
+          : 0,
+    }))
+
+  const rows = [...priorRows, currentRow]
+  if (rows.length === 1) {
+    return [
+      {
+        date: new Date(currentRow.date.getTime() - 7 * 86_400_000),
+        total: 0,
+        members: 0,
+        visitors: 0,
+        turnoutPercent: 0,
+      },
+      currentRow,
+    ]
+  }
+  return rows
+}
+
 export function AnalyticsPage() {
   const services = useQuery({
     queryKey: ['services'],
@@ -198,14 +195,6 @@ export function AnalyticsPage() {
 
   const data = report.data
   const trend = data?.trend ?? []
-  const trendIndex = trend.findIndex((point) => point.id === data?.service.id)
-  const previous = trendIndex > 0 ? trend[trendIndex - 1] : null
-  const visitors = data
-    ? data.summary.first_timers + data.summary.returning_visitors
-    : 0
-  const previousVisitors = previous
-    ? previous.firstTimers + previous.returningVisitors
-    : null
   const average = trend.length
     ? Math.round(trend.reduce((sum, p) => sum + p.total, 0) / trend.length)
     : 0
@@ -215,9 +204,44 @@ export function AnalyticsPage() {
     total: point.total,
     members: point.members,
   }))
-  const compareLabel = previous
-    ? `vs ${formatDay(previous.date)}`
-    : 'No earlier Sunday'
+  const kpiSeries = data ? buildAnalyticsKpiSeries(data) : []
+  const kpiMetrics: KpiMetric[] = data
+    ? [
+        {
+          label: 'Total attendance',
+          color: 'var(--chart-1)',
+          data: kpiSeries.map((point) => ({
+            date: point.date,
+            value: point.total,
+          })),
+        },
+        {
+          label: 'Members present',
+          color: 'var(--chart-2)',
+          data: kpiSeries.map((point) => ({
+            date: point.date,
+            value: point.members,
+          })),
+        },
+        {
+          label: 'Visitors',
+          color: 'var(--chart-5)',
+          data: kpiSeries.map((point) => ({
+            date: point.date,
+            value: point.visitors,
+          })),
+        },
+        {
+          label: 'Member turnout',
+          color: 'var(--chart-4)',
+          format: (value) => `${value}%`,
+          data: kpiSeries.map((point) => ({
+            date: point.date,
+            value: point.turnoutPercent,
+          })),
+        },
+      ]
+    : []
 
   return (
     <ChurchPage
@@ -273,54 +297,7 @@ export function AnalyticsPage() {
 
       {data && (
         <div className='space-y-6'>
-          <Card className='gap-0 overflow-hidden py-0'>
-            <div className='grid gap-px bg-border sm:grid-cols-2 xl:grid-cols-4 [&>*]:bg-card'>
-              <Stat
-                label='Total attendance'
-                value={integer.format(data.summary.total)}
-              >
-                <Delta
-                  value={previous ? data.summary.total - previous.total : null}
-                  label={compareLabel}
-                />
-              </Stat>
-              <Stat
-                label='Members present'
-                value={integer.format(data.summary.members)}
-              >
-                <Delta
-                  value={
-                    previous ? data.summary.members - previous.members : null
-                  }
-                  label={compareLabel}
-                />
-              </Stat>
-              <Stat label='Visitors' value={integer.format(visitors)}>
-                <span className='text-xs text-muted-foreground'>
-                  {integer.format(data.summary.first_timers)} first-time ·{' '}
-                  {integer.format(data.summary.returning_visitors)} returning
-                  {previousVisitors !== null && (
-                    <span className='sr-only'>
-                      {' '}
-                      ({integer.format(visitors - previousVisitors)} change)
-                    </span>
-                  )}
-                </span>
-              </Stat>
-              <Stat
-                label='Member turnout'
-                value={`${data.summary.turnoutPercent}%`}
-              >
-                <div className='space-y-1.5 pt-1'>
-                  <Meter percent={data.summary.turnoutPercent} />
-                  <p className='text-xs text-muted-foreground'>
-                    {integer.format(data.summary.members)} of{' '}
-                    {integer.format(data.summary.eligible)} eligible members
-                  </p>
-                </div>
-              </Stat>
-            </div>
-          </Card>
+          <KpiSparklines metrics={kpiMetrics} />
 
           <Card>
             <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-4'>

@@ -1,14 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import {
-  Activity,
-  CalendarDays,
-  Percent,
-  ScanLine,
-  UserRoundPlus,
-  Users,
-} from 'lucide-react'
+import { CalendarDays, ScanLine } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,10 +11,63 @@ import {
   formatServiceStatus,
   serviceStatusClass,
 } from './format'
+import { KpiSparklines, type KpiMetric } from './kpi-sparklines'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { ServicePicker } from './service-picker'
 import { type Service, type Summary } from './types'
+
+type SeriesRow = {
+  date: Date
+  total: number
+  members: number
+  visitors: number
+  turnoutPercent: number
+}
+
+function buildDashboardSeries(
+  current: Summary,
+  trend: Summary[] | undefined,
+  fallbackIso?: string
+): SeriesRow[] {
+  const currentIso =
+    current.scheduled_start_at ?? fallbackIso ?? new Date().toISOString()
+  const currentRow: SeriesRow = {
+    date: new Date(currentIso),
+    total: Number(current.total ?? 0),
+    members: Number(current.members ?? 0),
+    visitors:
+      Number(current.first_timers ?? 0) +
+      Number(current.returning_visitors ?? 0),
+    turnoutPercent: Number(current.turnoutPercent ?? 0),
+  }
+
+  const historical = (trend ?? [])
+    .filter((item) => item.id !== current.id && item.scheduled_start_at)
+    .map((item) => ({
+      date: new Date(item.scheduled_start_at!),
+      total: Number(item.total ?? 0),
+      members: Number(item.members ?? 0),
+      visitors:
+        Number(item.first_timers ?? 0) + Number(item.returning_visitors ?? 0),
+      turnoutPercent: Number(item.turnoutPercent ?? 0),
+    }))
+
+  const rows = [...historical, currentRow]
+  if (rows.length === 1) {
+    return [
+      {
+        date: new Date(currentRow.date.getTime() - 7 * 86_400_000),
+        total: 0,
+        members: 0,
+        visitors: 0,
+        turnoutPercent: 0,
+      },
+      currentRow,
+    ]
+  }
+  return rows
+}
 
 export function DashboardPage() {
   const services = useQuery({
@@ -41,7 +87,9 @@ export function DashboardPage() {
   const summary = useQuery({
     queryKey: ['dashboard', serviceId],
     queryFn: () =>
-      api<{ summary: Summary }>(`/api/v1/dashboard?serviceId=${serviceId}`),
+      api<{ summary: Summary; trend?: Summary[] }>(
+        `/api/v1/dashboard?serviceId=${serviceId}`
+      ),
     enabled: !!serviceId,
     refetchInterval: () =>
       document.visibilityState === 'visible' ? 3000 : false,
@@ -51,6 +99,52 @@ export function DashboardPage() {
   const regularOrOther = data
     ? Math.max(0, data.total - data.members - visitors)
     : 0
+
+  const series = data
+    ? buildDashboardSeries(
+        data,
+        summary.data?.trend,
+        selectedService?.scheduled_start_at
+      )
+    : []
+
+  const kpiMetrics: KpiMetric[] = data
+    ? [
+        {
+          label: 'Total checked in',
+          color: 'var(--chart-1)',
+          data: series.map((point) => ({
+            date: point.date,
+            value: point.total,
+          })),
+        },
+        {
+          label: 'Members present',
+          color: 'var(--chart-2)',
+          data: series.map((point) => ({
+            date: point.date,
+            value: point.members,
+          })),
+        },
+        {
+          label: 'Visitors',
+          color: 'var(--chart-5)',
+          data: series.map((point) => ({
+            date: point.date,
+            value: point.visitors,
+          })),
+        },
+        {
+          label: 'Member turnout',
+          color: 'var(--chart-4)',
+          format: (value) => `${value}%`,
+          data: series.map((point) => ({
+            date: point.date,
+            value: point.turnoutPercent,
+          })),
+        },
+      ]
+    : []
 
   const breakdown = data
     ? [
@@ -155,95 +249,7 @@ export function DashboardPage() {
 
               {data && (
                 <>
-                  <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
-                    <Card>
-                      <CardHeader className='flex flex-row items-center justify-between pb-2'>
-                        <CardTitle className='text-sm font-medium text-muted-foreground'>
-                          Total checked in
-                        </CardTitle>
-                        <span className='flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400'>
-                          <Activity className='size-4' aria-hidden='true' />
-                        </span>
-                      </CardHeader>
-                      <CardContent>
-                        <p className='text-3xl font-semibold tabular-nums'>
-                          {data.total}
-                        </p>
-                        <p className='mt-1 text-xs text-muted-foreground'>
-                          All recorded arrivals
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className='flex flex-row items-center justify-between pb-2'>
-                        <CardTitle className='text-sm font-medium text-muted-foreground'>
-                          Members present
-                        </CardTitle>
-                        <span className='flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400'>
-                          <Users className='size-4' aria-hidden='true' />
-                        </span>
-                      </CardHeader>
-                      <CardContent>
-                        <p className='text-3xl font-semibold tabular-nums'>
-                          {data.members}
-                        </p>
-                        <p className='mt-1 text-xs text-muted-foreground'>
-                          Of {data.eligible} eligible members
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className='flex flex-row items-center justify-between pb-2'>
-                        <CardTitle className='text-sm font-medium text-muted-foreground'>
-                          Visitors
-                        </CardTitle>
-                        <span className='flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'>
-                          <UserRoundPlus
-                            className='size-4'
-                            aria-hidden='true'
-                          />
-                        </span>
-                      </CardHeader>
-                      <CardContent>
-                        <p className='text-3xl font-semibold tabular-nums'>
-                          {visitors}
-                        </p>
-                        <p className='mt-1 text-xs text-muted-foreground'>
-                          {data.first_timers} first-time ·{' '}
-                          {data.returning_visitors} returning
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className='flex flex-row items-center justify-between pb-2'>
-                        <CardTitle className='text-sm font-medium text-muted-foreground'>
-                          Member turnout
-                        </CardTitle>
-                        <span className='flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400'>
-                          <Percent className='size-4' aria-hidden='true' />
-                        </span>
-                      </CardHeader>
-                      <CardContent>
-                        <p className='text-3xl font-semibold tabular-nums'>
-                          {data.turnoutPercent}%
-                        </p>
-                        <div
-                          aria-hidden='true'
-                          className='mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted'
-                        >
-                          <div
-                            className='h-full rounded-full bg-sky-500 transition-all duration-300'
-                            style={{
-                              width: `${Math.min(100, Math.max(0, data.turnoutPercent))}%`,
-                            }}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                  <KpiSparklines metrics={kpiMetrics} />
 
                   <Card>
                     <CardHeader className='pb-3'>
