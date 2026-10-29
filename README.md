@@ -12,16 +12,17 @@ Single-church online Member and Attendance Management System for **Grace Arena M
 
 ## Operational Routes
 
-| Route        | Purpose                                                                                                                    | Permitted Roles                                                     |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `/login`     | Staff session sign-in (`HttpOnly`, `SameSite=Strict`, `Secure` on HTTPS)                                                   | All staff                                                           |
-| `/dashboard` | Live polled service summary, stage breakdown, and eligible member turnout                                                  | `SERVICE_SUPERVISOR`, `ADMIN`, `PASTOR_VIEWER`                      |
+| Route        | Purpose                                                                                                                                                          | Permitted Roles                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `/login`     | Staff session sign-in (`HttpOnly`, `SameSite=Strict`, `Secure` on HTTPS)                                                                                         | All staff                                                           |
+| `/dashboard` | Live polled service summary, stage breakdown, and eligible member turnout                                                                                        | `SERVICE_SUPERVISOR`, `ADMIN`, `PASTOR_VIEWER`                      |
+| `/analytics` | 12-Sunday attendance trend, cell and Activity Group breakdowns, and weekly absent-member follow-up                                                               | `SERVICE_SUPERVISOR`, `ADMIN`, `PASTOR_VIEWER`                      |
 | `/scan`      | Camera QR scanner (`@zxing/browser`), USB keyboard wedge, Crockford shortcode entry with 3s cooldown, and staff-assisted name/phone check-in for forgotten cards | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`                  |
-| `/desk`      | New/existing member toggle, consent-first registration, `pg_trgm` duplicate review, initial card issuance, name/phone/code manual check-in | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`                  |
-| `/directory` | Single-church directory with role-based phone masking                                                                      | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`, `PASTOR_VIEWER` |
-| `/services`  | Schedule gatherings, open check-in windows, close & freeze eligible member count                                           | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
-| `/cards`     | Supervised active-card lookup, revocation, and atomic replacement (browser-rendered PNG + printable PDF)                   | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
-| `/reports`   | Audited attendance CSV export and 2-Sunday consecutive absentee pastoral list                                              | `ADMIN`, `PASTOR_VIEWER`                                            |
+| `/desk`      | New/existing member toggle, consent-first registration, `pg_trgm` duplicate review, initial card issuance, name/phone/code manual check-in                       | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`                  |
+| `/directory` | Single-church directory with role-based phone masking                                                                                                            | `REGISTRATION_DESK`, `SERVICE_SUPERVISOR`, `ADMIN`, `PASTOR_VIEWER` |
+| `/services`  | Schedule gatherings, open check-in windows, close & freeze eligible member count                                                                                 | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
+| `/cards`     | Supervised active-card lookup, revocation, and atomic replacement (browser-rendered PNG + printable PDF)                                                         | `SERVICE_SUPERVISOR`, `ADMIN`                                       |
+| `/reports`   | Audited attendance CSV export and 2-Sunday consecutive absentee pastoral list                                                                                    | `ADMIN`, `PASTOR_VIEWER`                                            |
 
 ## Local Setup
 

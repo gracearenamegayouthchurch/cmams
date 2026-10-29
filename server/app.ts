@@ -43,6 +43,7 @@ import {
   csvRows,
   dashboardSummary,
 } from './reports.js'
+import { analyticsReport } from './analytics.js'
 
 const loginFields = z.object({
   email: z.email(),
@@ -202,6 +203,13 @@ export async function handleApi(request: Request): Promise<Response> {
       return summary
         ? json({ summary })
         : json({ error: 'Service not found' }, 404)
+    }
+    if (path === '/api/v1/analytics' && method === 'GET') {
+      if (!allow(staff.role, 'dashboard'))
+        return json({ error: 'Action not permitted' }, 403)
+      const id = z.uuid().parse(url.searchParams.get('serviceId'))
+      const report = await analyticsReport(getDb(), id)
+      return report ? json(report) : json({ error: 'Service not found' }, 404)
     }
     if (path.startsWith('/api/v1/reports/') && method === 'GET') {
       if (!allow(staff.role, 'export'))
@@ -471,6 +479,7 @@ export async function handleApi(request: Request): Promise<Response> {
         method === 'GET' ? 'checkin' : 'services',
       ],
       [/^\/api\/v1\/dashboard(?:\/|$)/, 'dashboard'],
+      [/^\/api\/v1\/analytics(?:\/|$)/, 'dashboard'],
       [/^\/api\/v1\/reports(?:\/|$)/, 'export'],
       [/^\/api\/v1\/cards(?:\/|$)/, 'cards'],
     ]

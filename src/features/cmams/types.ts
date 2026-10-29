@@ -56,6 +56,67 @@ export type Summary = {
   turnoutPercent: number
 }
 
+export type AnalyticsBreakdown = {
+  id: string
+  name: string
+  members: number
+  attendees: number
+  turnoutPercent: number
+}
+
+export type AnalyticsCell = AnalyticsBreakdown & {
+  region: string
+}
+
+export type AnalyticsTrendPoint = {
+  id: string
+  name: string
+  date: string
+  total: number
+  members: number
+  firstTimers: number
+  returningVisitors: number
+}
+
+export type AnalyticsAbsentee = {
+  id: string
+  member_code: string
+  first_name: string
+  last_name: string
+  cell_name: string | null
+  last_attended_at: string | null
+}
+
+export type AnalyticsReport = {
+  service: {
+    id: string
+    name: string
+    status: string
+    scheduled_start_at: string
+  }
+  summary: {
+    total: number
+    members: number
+    first_timers: number
+    returning_visitors: number
+    eligible: number
+    turnoutPercent: number
+  }
+  trend: AnalyticsTrendPoint[]
+  cells: AnalyticsCell[]
+  unassigned: {
+    members: number
+    attendees: number
+  }
+  departments: AnalyticsBreakdown[]
+  absentees: AnalyticsAbsentee[]
+  latestSunday: {
+    id: string
+    name: string
+    date: string
+  } | null
+}
+
 export type IssuedCard = {
   memberCode: string
   shortCode: string

@@ -12,6 +12,7 @@ import { page, userEvent } from 'vitest/browser'
 import { ApiError } from '@/lib/cmams-api'
 import { ThemeProvider } from '@/context/theme-provider'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { AnalyticsPage } from './analytics'
 import { CardDownloads, CardsPage } from './cards'
 import { CatalogsPage } from './catalogs'
 import { CellsPage } from './cells'
@@ -485,7 +486,10 @@ describe('CMAMS browser workflows', () => {
       .element(screen.getByLabelText('New member'))
       .toHaveAttribute('aria-checked', 'true')
     await userEvent.click(screen.getByLabelText('Existing member'))
-    await userEvent.type(screen.getByLabelText('Search members by name, phone or code'), 'Ada')
+    await userEvent.type(
+      screen.getByLabelText('Search members by name, phone or code'),
+      'Ada'
+    )
     await expect.element(screen.getByText('CM-1001')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
     await expect.element(screen.getByText('Check-ins')).toBeVisible()
@@ -509,20 +513,44 @@ describe('CMAMS browser workflows', () => {
         if (url.startsWith('/api/v1/people?'))
           return jsonResponse({
             people: [
-              { id: 'ada', first_name: 'Ada', last_name: 'Okafor', member_code: 'CM-1001', phone: '+234803*****92', lifecycle_stage: 'MEMBER' },
-              { id: 'bola', first_name: 'Bola', last_name: 'Okafor', member_code: 'CM-1002', phone: '+234803*****92', lifecycle_stage: 'MEMBER' },
+              {
+                id: 'ada',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                member_code: 'CM-1001',
+                phone: '+234803*****92',
+                lifecycle_stage: 'MEMBER',
+              },
+              {
+                id: 'bola',
+                first_name: 'Bola',
+                last_name: 'Okafor',
+                member_code: 'CM-1002',
+                phone: '+234803*****92',
+                lifecycle_stage: 'MEMBER',
+              },
             ],
           })
         if (url === '/api/v1/services') return jsonResponse({ services: [] })
-        return jsonResponse({ compounds: [], departments: [], regions: [], cells: [] })
+        return jsonResponse({
+          compounds: [],
+          departments: [],
+          regions: [],
+          cells: [],
+        })
       })
     )
     const screen = await renderWithShell(<DeskPage />)
     await userEvent.click(screen.getByLabelText('Existing member'))
-    await userEvent.type(screen.getByLabelText('Search members by name, phone or code'), '0803 123 4592')
+    await userEvent.type(
+      screen.getByLabelText('Search members by name, phone or code'),
+      '0803 123 4592'
+    )
     await expect.element(screen.getByText('CM-1001')).toBeVisible()
     await expect.element(screen.getByText('CM-1002')).toBeVisible()
-    expect(calls.some((path) => path.includes('q=0803%20123%204592'))).toBe(true)
+    expect(calls.some((path) => path.includes('q=0803%20123%204592'))).toBe(
+      true
+    )
     await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
     expect(calls.some((path) => path.includes('/manual-check-ins'))).toBe(false)
   })
@@ -530,69 +558,136 @@ describe('CMAMS browser workflows', () => {
   it('checks in a selected forgotten-card member by phone on the Scan page', async () => {
     const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
     const sent: { path: string; body: unknown }[] = []
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === '/api/v1/services')
-        return jsonResponse({ services: [{
-          id: serviceId, name: 'Sunday Service', status: 'CHECKIN_OPEN',
-          category: 'SUNDAY_SERVICE', scheduled_start_at: '2026-10-25T08:00:00Z',
-          checkin_opens_at: '2026-10-25T07:00:00Z', checkin_closes_at: '2026-10-25T11:00:00Z',
-          locked_eligible_member_count: null,
-        }] })
-      if (url.startsWith('/api/v1/people?'))
-        return jsonResponse({ people: [
-          { id: 'ada', first_name: 'Ada', last_name: 'Okafor', member_code: 'CM-1001', phone: '+234803*****92', lifecycle_stage: 'MEMBER' },
-          { id: 'bola', first_name: 'Bola', last_name: 'Okafor', member_code: 'CM-1002', phone: '+234803*****92', lifecycle_stage: 'MEMBER' },
-        ] })
-      if (url.endsWith('/manual-check-ins')) {
-        sent.push({ path: url, body: JSON.parse(String(init?.body)) })
-        return jsonResponse({ outcome: 'CHECKED_IN' })
-      }
-      return jsonResponse({}, 404)
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Sunday Service',
+                status: 'CHECKIN_OPEN',
+                category: 'SUNDAY_SERVICE',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+                locked_eligible_member_count: null,
+              },
+            ],
+          })
+        if (url.startsWith('/api/v1/people?'))
+          return jsonResponse({
+            people: [
+              {
+                id: 'ada',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                member_code: 'CM-1001',
+                phone: '+234803*****92',
+                lifecycle_stage: 'MEMBER',
+              },
+              {
+                id: 'bola',
+                first_name: 'Bola',
+                last_name: 'Okafor',
+                member_code: 'CM-1002',
+                phone: '+234803*****92',
+                lifecycle_stage: 'MEMBER',
+              },
+            ],
+          })
+        if (url.endsWith('/manual-check-ins')) {
+          sent.push({ path: url, body: JSON.parse(String(init?.body)) })
+          return jsonResponse({ outcome: 'CHECKED_IN' })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
     const screen = await renderWithShell(<ScanPage />)
-    await userEvent.type(screen.getByLabelText('Search by name or phone'), '0803 123 4592')
+    await userEvent.type(
+      screen.getByLabelText('Search by name or phone'),
+      '0803 123 4592'
+    )
     await expect.element(screen.getByText('CM-1002')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
     expect(sent).toHaveLength(0)
     const submit = screen.getByRole('button', { name: 'Check in without card' })
     await expect.element(submit).toBeDisabled()
-    await userEvent.type(screen.getByLabelText('Reason for manual check-in'), 'Forgot QR card')
+    await userEvent.type(
+      screen.getByLabelText('Reason for manual check-in'),
+      'Forgot QR card'
+    )
     await userEvent.click(submit)
     await expect.element(screen.getByText('Checked in')).toBeVisible()
     expect(sent).toHaveLength(1)
     expect(sent[0].path).toBe(`/api/v1/services/${serviceId}/manual-check-ins`)
-    expect(sent[0].body).toMatchObject({ personId: 'ada', reason: 'Forgot QR card' })
+    expect(sent[0].body).toMatchObject({
+      personId: 'ada',
+      reason: 'Forgot QR card',
+    })
   })
 
   it('does not report a duplicate or failed manual check-in as success', async () => {
     const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
     let outcome: 'duplicate' | 'offline' = 'duplicate'
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/v1/services')
-        return jsonResponse({ services: [{
-          id: serviceId, name: 'Sunday Service', status: 'CHECKIN_OPEN',
-          category: 'SUNDAY_SERVICE', scheduled_start_at: '2026-10-25T08:00:00Z',
-          checkin_opens_at: '2026-10-25T07:00:00Z', checkin_closes_at: '2026-10-25T11:00:00Z',
-        }] })
-      if (url.startsWith('/api/v1/people?'))
-        return jsonResponse({ people: [{ id: 'ada', first_name: 'Ada', last_name: 'Okafor', member_code: 'CM-1001', phone: '+234803*****92' }] })
-      if (url.endsWith('/manual-check-ins')) {
-        if (outcome === 'offline') throw new Error('Network unreachable')
-        return jsonResponse({ outcome: 'ALREADY_CHECKED_IN' })
-      }
-      return jsonResponse({}, 404)
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Sunday Service',
+                status: 'CHECKIN_OPEN',
+                category: 'SUNDAY_SERVICE',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+              },
+            ],
+          })
+        if (url.startsWith('/api/v1/people?'))
+          return jsonResponse({
+            people: [
+              {
+                id: 'ada',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                member_code: 'CM-1001',
+                phone: '+234803*****92',
+              },
+            ],
+          })
+        if (url.endsWith('/manual-check-ins')) {
+          if (outcome === 'offline') throw new Error('Network unreachable')
+          return jsonResponse({ outcome: 'ALREADY_CHECKED_IN' })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
     const screen = await renderWithShell(<ScanPage />)
-    await userEvent.type(screen.getByLabelText('Search by name or phone'), 'Ada')
+    await userEvent.type(
+      screen.getByLabelText('Search by name or phone'),
+      'Ada'
+    )
     await expect.element(screen.getByText('CM-1001')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
-    await userEvent.type(screen.getByLabelText('Reason for manual check-in'), 'Forgot card')
-    await userEvent.click(screen.getByRole('button', { name: 'Check in without card' }))
+    await userEvent.type(
+      screen.getByLabelText('Reason for manual check-in'),
+      'Forgot card'
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Check in without card' })
+    )
     await expect.element(screen.getByText('Already checked in')).toBeVisible()
     outcome = 'offline'
-    await userEvent.click(screen.getByRole('button', { name: 'Check in without card' }))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Check in without card' })
+    )
     await expect.element(screen.getByText('Not checked in')).toBeVisible()
     await expect.element(screen.getByText('Network unreachable')).toBeVisible()
     expect(screen.getByText('Checked in', { exact: true }).query()).toBeNull()
@@ -743,6 +838,133 @@ describe('CMAMS browser workflows', () => {
     )
     await expect.element(screen.getByText('60%')).toBeVisible()
     await expect.element(screen.getByText('Access denied')).toBeVisible()
+  })
+
+  it('renders attendance analytics with trend, cell, group, and absentee views', async () => {
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    const sundayId = '11111111-1111-4111-8111-111111111111'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.startsWith('/api/v1/services')) {
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Youth Service',
+                category: 'SUNDAY_SERVICE',
+                status: 'CHECKIN_CLOSED',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+                locked_eligible_member_count: null,
+              },
+            ],
+          })
+        }
+        if (url.startsWith('/api/v1/analytics')) {
+          return jsonResponse({
+            service: {
+              id: serviceId,
+              name: 'Youth Service',
+              status: 'CHECKIN_CLOSED',
+              scheduled_start_at: '2026-10-25T08:00:00Z',
+            },
+            summary: {
+              total: 42,
+              members: 30,
+              first_timers: 8,
+              returning_visitors: 4,
+              eligible: 50,
+              turnoutPercent: 60,
+            },
+            trend: [
+              {
+                id: '22222222-2222-4222-8222-222222222222',
+                name: 'Youth Service',
+                date: '2026-10-18T08:00:00.000Z',
+                total: 36,
+                members: 27,
+                firstTimers: 6,
+                returningVisitors: 3,
+              },
+              {
+                id: sundayId,
+                name: 'Youth Service',
+                date: '2026-10-25T08:00:00.000Z',
+                total: 42,
+                members: 30,
+                firstTimers: 8,
+                returningVisitors: 4,
+              },
+            ],
+            cells: [
+              {
+                id: '33333333-3333-4333-8333-333333333333',
+                name: 'Ndar Region 1',
+                region: 'NDAR',
+                members: 4,
+                attendees: 3,
+                turnoutPercent: 75,
+              },
+            ],
+            unassigned: { members: 5, attendees: 2 },
+            departments: [
+              {
+                id: '44444444-4444-4444-8444-444444444444',
+                name: 'Choir',
+                members: 3,
+                attendees: 2,
+                turnoutPercent: 66.7,
+              },
+            ],
+            absentees: [
+              {
+                id: '55555555-5555-4555-8555-555555555555',
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                cell_name: 'Ndar Region 1',
+                last_attended_at: '2026-10-11T08:30:00.000Z',
+              },
+            ],
+            latestSunday: {
+              id: sundayId,
+              name: 'Youth Service',
+              date: '2026-10-25T08:00:00.000Z',
+            },
+          })
+        }
+        return jsonResponse({ error: 'Not found' }, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<AnalyticsPage />)
+    await expect
+      .element(screen.getByText('Sunday attendance trend'))
+      .toBeVisible()
+    await expect.element(screen.getByText('Attendance by cell')).toBeVisible()
+    await expect
+      .element(screen.getByText('Attendance by Activity Group'))
+      .toBeVisible()
+    await expect
+      .element(screen.getByText('Absent members this week'))
+      .toBeVisible()
+    await expect.element(screen.getByText('60%')).toBeVisible()
+    await expect.element(screen.getByText('75%')).toBeVisible()
+    await expect.element(screen.getByText('66.7%')).toBeVisible()
+    await expect.element(screen.getByText('Ada Okafor')).toBeVisible()
+    await expect
+      .element(screen.getByText(/not assigned to a cell/))
+      .toBeVisible()
+    await expect
+      .element(
+        screen.getByRole('img', {
+          name: /area chart of total attendance/i,
+        })
+      )
+      .toBeVisible()
   })
 
   it('renders a downloadable card preview and issues cards by searching people', async () => {

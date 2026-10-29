@@ -8,6 +8,7 @@ describe('CMAMS navigation', () => {
     )
     expect(links).toEqual([
       'Dashboard',
+      'Analytics',
       'Scan',
       'Registration',
       'Cells',

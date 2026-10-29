@@ -29,6 +29,7 @@ import { Route as AuthenticatedChangePasswordIndexRouteImport } from './routes/_
 import { Route as AuthenticatedCellsIndexRouteImport } from './routes/_authenticated/cells/index'
 import { Route as AuthenticatedCatalogsIndexRouteImport } from './routes/_authenticated/catalogs/index'
 import { Route as AuthenticatedCardsIndexRouteImport } from './routes/_authenticated/cards/index'
+import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authenticated/analytics/index'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -136,6 +137,12 @@ const AuthenticatedCardsIndexRoute = AuthenticatedCardsIndexRouteImport.update({
   path: '/cards/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAnalyticsIndexRoute =
+  AuthenticatedAnalyticsIndexRouteImport.update({
+    id: '/analytics/',
+    path: '/analytics/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -145,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/cards/': typeof AuthenticatedCardsIndexRoute
   '/catalogs/': typeof AuthenticatedCatalogsIndexRoute
   '/cells/': typeof AuthenticatedCellsIndexRoute
@@ -166,6 +174,7 @@ export interface FileRoutesByTo {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
+  '/analytics': typeof AuthenticatedAnalyticsIndexRoute
   '/cards': typeof AuthenticatedCardsIndexRoute
   '/catalogs': typeof AuthenticatedCatalogsIndexRoute
   '/cells': typeof AuthenticatedCellsIndexRoute
@@ -189,6 +198,7 @@ export interface FileRoutesById {
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/_authenticated/cards/': typeof AuthenticatedCardsIndexRoute
   '/_authenticated/catalogs/': typeof AuthenticatedCatalogsIndexRoute
   '/_authenticated/cells/': typeof AuthenticatedCellsIndexRoute
@@ -212,6 +222,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/analytics/'
     | '/cards/'
     | '/catalogs/'
     | '/cells/'
@@ -233,6 +244,7 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/'
+    | '/analytics'
     | '/cards'
     | '/catalogs'
     | '/cells'
@@ -255,6 +267,7 @@ export interface FileRouteTypes {
     | '/(errors)/500'
     | '/(errors)/503'
     | '/_authenticated/'
+    | '/_authenticated/analytics/'
     | '/_authenticated/cards/'
     | '/_authenticated/catalogs/'
     | '/_authenticated/cells/'
@@ -421,11 +434,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCardsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/analytics/': {
+      id: '/_authenticated/analytics/'
+      path: '/analytics'
+      fullPath: '/analytics/'
+      preLoaderRoute: typeof AuthenticatedAnalyticsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAnalyticsIndexRoute: typeof AuthenticatedAnalyticsIndexRoute
   AuthenticatedCardsIndexRoute: typeof AuthenticatedCardsIndexRoute
   AuthenticatedCatalogsIndexRoute: typeof AuthenticatedCatalogsIndexRoute
   AuthenticatedCellsIndexRoute: typeof AuthenticatedCellsIndexRoute
@@ -442,6 +463,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAnalyticsIndexRoute: AuthenticatedAnalyticsIndexRoute,
   AuthenticatedCardsIndexRoute: AuthenticatedCardsIndexRoute,
   AuthenticatedCatalogsIndexRoute: AuthenticatedCatalogsIndexRoute,
   AuthenticatedCellsIndexRoute: AuthenticatedCellsIndexRoute,

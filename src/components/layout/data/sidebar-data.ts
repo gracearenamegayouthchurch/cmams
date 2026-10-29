@@ -8,6 +8,7 @@ import {
   Users,
   ShieldCheck,
   ListChecks,
+  TrendingUp,
   UsersRound,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
@@ -20,6 +21,7 @@ export const sidebarData: SidebarData = {
       title: 'Navigation',
       items: [
         { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
+        { title: 'Analytics', url: '/analytics', icon: TrendingUp },
         { title: 'Scan', url: '/scan', icon: ScanLine },
         { title: 'Registration', url: '/desk', icon: UserRoundPlus },
         { title: 'Cells', url: '/cells', icon: UsersRound },

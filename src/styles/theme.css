@@ -23,6 +23,31 @@
   --chart-3: oklch(0.38 0.07 248);
   --chart-4: oklch(0.76 0.14 82);
   --chart-5: oklch(0.64 0.16 155);
+  --chart-background: var(--card);
+  --chart-foreground: var(--foreground);
+  --chart-foreground-muted: var(--muted-foreground);
+  --chart-line-primary: var(--chart-1);
+  --chart-line-secondary: var(--chart-2);
+  --chart-crosshair: oklch(0.4 0.18 274);
+  --chart-grid: oklch(0.9 0 0);
+  --chart-label: var(--muted-foreground);
+  --chart-tooltip-background: var(--popover);
+  --chart-tooltip-foreground: var(--popover-foreground);
+  --chart-tooltip-muted: var(--muted-foreground);
+  --chart-indicator-color: var(--foreground);
+  --chart-indicator-secondary-color: var(--border);
+  --chart-marker-background: var(--card);
+  --chart-marker-border: var(--border);
+  --chart-marker-foreground: var(--foreground);
+  --chart-marker-badge-background: var(--foreground);
+  --chart-marker-badge-foreground: var(--background);
+  --chart-segment-background: color-mix(
+    in oklab,
+    var(--foreground) 6%,
+    transparent
+  );
+  --chart-segment-line: color-mix(in oklab, var(--foreground) 25%, transparent);
+  --chart-brush-border: var(--chart-grid);
 
   --sidebar: oklch(0.985 0.004 240);
   --sidebar-foreground: oklch(0.18 0.042 252);
@@ -58,6 +83,31 @@
   --chart-3: oklch(0.76 0.15 80);
   --chart-4: oklch(0.65 0.16 155);
   --chart-5: oklch(0.64 0.19 25);
+  --chart-background: var(--card);
+  --chart-foreground: var(--foreground);
+  --chart-foreground-muted: var(--muted-foreground);
+  --chart-line-primary: var(--chart-1);
+  --chart-line-secondary: var(--chart-2);
+  --chart-crosshair: oklch(0.45 0 0);
+  --chart-grid: oklch(0.25 0 0);
+  --chart-label: var(--muted-foreground);
+  --chart-tooltip-background: var(--popover);
+  --chart-tooltip-foreground: var(--popover-foreground);
+  --chart-tooltip-muted: var(--muted-foreground);
+  --chart-indicator-color: var(--foreground);
+  --chart-indicator-secondary-color: var(--border);
+  --chart-marker-background: var(--card);
+  --chart-marker-border: var(--border);
+  --chart-marker-foreground: var(--foreground);
+  --chart-marker-badge-background: var(--foreground);
+  --chart-marker-badge-foreground: var(--background);
+  --chart-segment-background: color-mix(
+    in oklab,
+    var(--foreground) 6%,
+    transparent
+  );
+  --chart-segment-line: color-mix(in oklab, var(--foreground) 25%, transparent);
+  --chart-brush-border: var(--chart-grid);
 
   --sidebar: oklch(0.17 0.044 250);
   --sidebar-foreground: oklch(0.96 0.008 240);
@@ -100,6 +150,29 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-background: var(--chart-background);
+  --color-chart-foreground: var(--chart-foreground);
+  --color-chart-foreground-muted: var(--chart-foreground-muted);
+  --color-chart-label: var(--chart-label);
+  --color-chart-line-primary: var(--chart-line-primary);
+  --color-chart-line-secondary: var(--chart-line-secondary);
+  --color-chart-crosshair: var(--chart-crosshair);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
+  --color-chart-indicator-color: var(--chart-indicator-color);
+  --color-chart-indicator-secondary-color: var(
+    --chart-indicator-secondary-color
+  );
+  --color-chart-marker-background: var(--chart-marker-background);
+  --color-chart-marker-border: var(--chart-marker-border);
+  --color-chart-marker-foreground: var(--chart-marker-foreground);
+  --color-chart-marker-badge-background: var(--chart-marker-badge-background);
+  --color-chart-marker-badge-foreground: var(--chart-marker-badge-foreground);
+  --color-chart-segment-background: var(--chart-segment-background);
+  --color-chart-segment-line: var(--chart-segment-line);
+  --color-chart-brush-border: var(--chart-brush-border);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

@@ -12,6 +12,7 @@ const access: Record<Staff['role'], string[]> = {
   REGISTRATION_DESK: ['Scan', 'Registration', 'Members'],
   SERVICE_SUPERVISOR: [
     'Dashboard',
+    'Analytics',
     'Scan',
     'Registration',
     'Members',
@@ -20,6 +21,7 @@ const access: Record<Staff['role'], string[]> = {
   ],
   ADMIN: [
     'Dashboard',
+    'Analytics',
     'Scan',
     'Registration',
     'Members',
@@ -30,7 +32,7 @@ const access: Record<Staff['role'], string[]> = {
     'Catalogs',
     'Cells',
   ],
-  PASTOR_VIEWER: ['Dashboard', 'Members', 'Reports', 'Cells'],
+  PASTOR_VIEWER: ['Dashboard', 'Analytics', 'Members', 'Reports', 'Cells'],
   CELL_LEADER: ['Cells'],
 }
 

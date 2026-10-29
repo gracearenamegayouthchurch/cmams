@@ -544,4 +544,81 @@ describe('API boundary', () => {
       ],
     })
   })
+
+  it('serves attendance analytics to an admin', async () => {
+    process.env.SESSION_SECRET = secret
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    mocked.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM staff_users WHERE id='))
+        return {
+          rows: [
+            {
+              id: 'staff',
+              full_name: 'Admin',
+              email: 'admin@example.com',
+              role: 'ADMIN',
+              session_version: 0,
+            },
+          ],
+        }
+      if (sql.includes('WHERE s.id=$1 GROUP BY s.id'))
+        return {
+          rows: [
+            {
+              id: serviceId,
+              name: 'Sunday Service',
+              status: 'CHECKIN_CLOSED',
+              scheduled_start_at: new Date('2026-10-25T08:00:00.000Z'),
+              total: 10,
+              members: 7,
+              first_timers: 2,
+              returning_visitors: 1,
+              eligible: 14,
+            },
+          ],
+        }
+      if (sql.includes('FROM people p') && sql.includes('NOT EXISTS'))
+        return { rows: [{ members: 0, attendees: 0 }] }
+      return { rows: [] }
+    })
+    const token = signSession({ id: 'staff', role: 'ADMIN' }, secret)
+    const response = await handleApi(
+      new Request(
+        `https://church.example/api/v1/analytics?serviceId=${serviceId}`,
+        { headers: { cookie: `cmams_session=${token}` } }
+      )
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      service: { id: serviceId, name: 'Sunday Service' },
+      summary: { total: 10, members: 7, turnoutPercent: 50 },
+      trend: [],
+      cells: [],
+      departments: [],
+      absentees: [],
+    })
+  })
+
+  it('denies attendance analytics to a cell leader', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockResolvedValue({
+      rows: [
+        {
+          id: 'staff',
+          full_name: 'Leader',
+          email: 'leader@example.com',
+          role: 'CELL_LEADER',
+          session_version: 0,
+        },
+      ],
+    })
+    const token = signSession({ id: 'staff', role: 'CELL_LEADER' }, secret)
+    const response = await handleApi(
+      new Request(
+        'https://church.example/api/v1/analytics?serviceId=9ff41440-0d63-428e-ad12-039d0c244ca8',
+        { headers: { cookie: `cmams_session=${token}` } }
+      )
+    )
+    expect(response.status).toBe(403)
+  })
 })

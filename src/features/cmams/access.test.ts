@@ -9,10 +9,13 @@ it('shows the registration desk scan, registration and members', () => {
   ])
   expect(visibleNavigation('PASTOR_VIEWER')).toEqual([
     'Dashboard',
+    'Analytics',
     'Members',
     'Reports',
     'Cells',
   ])
+  expect(visibleNavigation('SERVICE_SUPERVISOR')).toContain('Analytics')
+  expect(visibleNavigation('CELL_LEADER')).not.toContain('Analytics')
 })
 
 it('shows staff management only to administrators', () => {

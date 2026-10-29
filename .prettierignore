@@ -17,3 +17,6 @@
 
 # Ignore auto generated routeTree.gen.ts
 /src/routeTree.gen.ts
+
+# Ignore vendored Bklit chart source
+/src/components/charts
