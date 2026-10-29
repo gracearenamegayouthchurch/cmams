@@ -13,6 +13,7 @@ import {
   InvalidCatalogSelection,
   findDuplicates,
   getPersonAttendanceHistory,
+  listFirstTimers,
   listPeoplePaginated,
   registerPerson,
 } from './people.js'
@@ -341,6 +342,29 @@ export async function handleApi(request: Request): Promise<Response> {
           return json({ error: error.message, code: error.code }, 409)
         throw error
       }
+    }
+
+    if (path === '/api/v1/first-timers' && method === 'GET') {
+      if (!allow(staff.role, 'directory'))
+        return json({ error: 'Action not permitted' }, 403)
+      const rawPage = Number(url.searchParams.get('page'))
+      const rawPageSize = Number(url.searchParams.get('pageSize'))
+      return json(
+        await listFirstTimers(
+          getDb(),
+          staff.role,
+          url.searchParams.get('q') ?? '',
+          {
+            filter: url.searchParams.get('filter') ?? 'all',
+            serviceId: url.searchParams.get('serviceId') ?? '',
+            page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+            pageSize:
+              Number.isFinite(rawPageSize) && rawPageSize > 0
+                ? rawPageSize
+                : 15,
+          }
+        )
+      )
     }
 
     const issueMatch = path.match(/^\/api\/v1\/people\/([0-9a-f-]{36})\/cards$/i)

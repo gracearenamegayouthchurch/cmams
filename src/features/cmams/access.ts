@@ -9,12 +9,13 @@ export const homeForRole: Record<Staff['role'], string> = {
 }
 
 const access: Record<Staff['role'], string[]> = {
-  REGISTRATION_DESK: ['Scan', 'Registration', 'Members'],
+  REGISTRATION_DESK: ['Scan', 'Registration', 'First-Timers', 'Members'],
   SERVICE_SUPERVISOR: [
     'Dashboard',
     'Analytics',
     'Scan',
     'Registration',
+    'First-Timers',
     'Members',
     'Services',
     'Cards',
@@ -24,6 +25,7 @@ const access: Record<Staff['role'], string[]> = {
     'Analytics',
     'Scan',
     'Registration',
+    'First-Timers',
     'Members',
     'Services',
     'Cards',
@@ -32,7 +34,14 @@ const access: Record<Staff['role'], string[]> = {
     'Catalogs',
     'Cells',
   ],
-  PASTOR_VIEWER: ['Dashboard', 'Analytics', 'Members', 'Reports', 'Cells'],
+  PASTOR_VIEWER: [
+    'Dashboard',
+    'Analytics',
+    'First-Timers',
+    'Members',
+    'Reports',
+    'Cells',
+  ],
   CELL_LEADER: ['Cells'],
 }
 

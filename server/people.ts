@@ -357,3 +357,190 @@ export async function getPersonAttendanceHistory(
     history: historyResult.rows,
   }
 }
+
+
+export type FirstTimersOptions = {
+  filter?: string
+  serviceId?: string
+  page?: number
+  pageSize?: number
+}
+
+export async function listFirstTimers(
+  db: Pick<pg.Pool, 'query'>,
+  _role: StaffRole,
+  search: string,
+  options: FirstTimersOptions = {}
+) {
+  const page = Math.max(1, Math.min(1000, Math.trunc(options.page ?? 1)))
+  const pageSize = Math.max(
+    1,
+    Math.min(100, Math.trunc(options.pageSize ?? 15))
+  )
+  const rawFilter = (options.filter ?? '').trim().toLowerCase()
+  const validFilter = [
+    'first_timer',
+    'promoted',
+    'unassigned_cell',
+    'all',
+  ].includes(rawFilter)
+    ? rawFilter
+    : 'all'
+  const rawServiceId = (options.serviceId ?? '').trim()
+  const validServiceId = z.uuid().safeParse(rawServiceId).success
+    ? rawServiceId
+    : ''
+  const offset = (page - 1) * pageSize
+  const trimmedSearch = search.trim().slice(0, 80)
+  const digits = /^[+\d\s()-]+$/.test(trimmedSearch)
+    ? trimmedSearch.replace(/\D/g, '')
+    : ''
+  const phoneSearch =
+    digits.length >= 7 ? digits.replace(/^0(?=\d{10}$)/, '234') : ''
+
+  const [summaryResult, rowsResult] = await Promise.all([
+    db.query(
+      `SELECT
+        count(*) FILTER (WHERE p.lifecycle_stage = 'FIRST_TIMER')::int AS active_first_timers,
+        count(*) FILTER (WHERE p.registered_at >= now() - interval '30 days')::int AS new_this_month,
+        count(*) FILTER (
+          WHERE p.lifecycle_stage <> 'FIRST_TIMER'
+            AND (SELECT count(*) FROM attendance_records a WHERE a.person_id = p.id) >= 2
+        )::int AS promoted_count,
+        count(*) FILTER (
+          WHERE p.lifecycle_stage = 'FIRST_TIMER'
+            AND NOT EXISTS (
+              SELECT 1 FROM cell_memberships cm WHERE cm.person_id = p.id AND cm.valid_to IS NULL
+            )
+        )::int AS unassigned_cell_count,
+        count(*)::int AS total_tracked
+      FROM people p
+      WHERE p.deleted_at IS NULL`
+    ),
+    db.query(
+      `SELECT
+        p.id,
+        p.member_code,
+        p.first_name,
+        p.middle_name,
+        p.last_name,
+        p.phone_e164,
+        p.email,
+        p.lifecycle_stage,
+        p.registered_at,
+        p.room,
+        p.birth_month,
+        p.birth_day,
+        p.birth_year,
+        cp.name AS compound_name,
+        cp.region AS compound_region,
+        cell_info.cell_id,
+        cell_info.cell_name,
+        cell_info.cell_region,
+        coalesce(dept_info.departments, ARRAY[]::text[]) AS departments,
+        coalesce(att_info.attendance_count, 0)::int AS attendance_count,
+        att_info.first_attended_at,
+        att_info.last_attended_at,
+        att_info.first_service_name,
+        count(*) OVER()::int AS total_count
+      FROM people p
+      LEFT JOIN compounds cp ON cp.id = p.compound_id
+      LEFT JOIN LATERAL (
+        SELECT c.id AS cell_id, c.name AS cell_name, c.region AS cell_region
+        FROM cell_memberships cm
+        JOIN cells c ON c.id = cm.cell_id
+        WHERE cm.person_id = p.id AND cm.valid_to IS NULL AND c.is_active = true
+        ORDER BY cm.valid_from DESC
+        LIMIT 1
+      ) cell_info ON true
+      LEFT JOIN LATERAL (
+        SELECT array_agg(d.name ORDER BY d.name) AS departments
+        FROM person_departments pd
+        JOIN departments d ON d.id = pd.department_id
+        WHERE pd.person_id = p.id AND pd.valid_to IS NULL AND d.is_active = true
+      ) dept_info ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          count(*)::int AS attendance_count,
+          min(a.checked_in_at) AS first_attended_at,
+          max(a.checked_in_at) AS last_attended_at,
+          (
+            SELECT s.name
+            FROM attendance_records a2
+            JOIN services s ON s.id = a2.service_id
+            WHERE a2.person_id = p.id
+            ORDER BY a2.checked_in_at ASC
+            LIMIT 1
+          ) AS first_service_name
+        FROM attendance_records a
+        WHERE a.person_id = p.id
+      ) att_info ON true
+      WHERE p.deleted_at IS NULL
+        AND (
+          $1 = ''
+          OR p.full_name_normalized ILIKE '%' || lower($1) || '%'
+          OR p.member_code ILIKE '%' || $1 || '%'
+          OR coalesce(p.email, '') ILIKE '%' || $1 || '%'
+          OR coalesce(cp.name, '') ILIKE '%' || $1 || '%'
+          OR ($2 <> '' AND regexp_replace(coalesce(p.phone_e164, ''), '[^0-9]', '', 'g') LIKE '%' || $2 || '%')
+        )
+        AND (
+          ($3 = 'first_timer' AND p.lifecycle_stage = 'FIRST_TIMER')
+          OR ($3 = 'promoted' AND p.lifecycle_stage <> 'FIRST_TIMER' AND coalesce(att_info.attendance_count, 0) >= 2)
+          OR ($3 = 'unassigned_cell' AND p.lifecycle_stage = 'FIRST_TIMER' AND cell_info.cell_id IS NULL)
+          OR ($3 = 'all')
+        )
+        AND (
+          $4 = ''
+          OR EXISTS (
+            SELECT 1 FROM attendance_records af
+            WHERE af.person_id = p.id
+              AND af.service_id = $4::uuid
+              AND af.snapshot_stage = 'FIRST_TIMER'
+          )
+        )
+      ORDER BY p.registered_at DESC
+      LIMIT $5 OFFSET $6`,
+      [
+        trimmedSearch,
+        phoneSearch,
+        validFilter,
+        validServiceId,
+        pageSize,
+        offset,
+      ]
+    ),
+  ])
+
+  const summaryRow = (summaryResult.rows[0] ?? {}) as Record<string, unknown>
+  const total =
+    rowsResult.rows.length > 0
+      ? Number((rowsResult.rows[0] as { total_count: number }).total_count)
+      : 0
+
+  const people = rowsResult.rows.map(
+    ({
+      phone_e164,
+      total_count: _total,
+      ...row
+    }: Record<string, unknown> & { phone_e164: string | null }) => ({
+      ...row,
+      phone: maskPhone(phone_e164),
+    })
+  )
+
+  return {
+    summary: {
+      activeFirstTimers: Number(summaryRow.active_first_timers ?? 0),
+      newThisMonth: Number(summaryRow.new_this_month ?? 0),
+      promotedCount: Number(summaryRow.promoted_count ?? 0),
+      unassignedCellCount: Number(summaryRow.unassigned_cell_count ?? 0),
+      totalTracked: Number(summaryRow.total_tracked ?? 0),
+    },
+    people,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  }
+}

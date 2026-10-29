@@ -22,6 +22,7 @@ import { Route as AuthenticatedServicesIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedScanIndexRouteImport } from './routes/_authenticated/scan/index'
 import { Route as AuthenticatedReportsIndexRouteImport } from './routes/_authenticated/reports/index'
 import { Route as AuthenticatedMembersIndexRouteImport } from './routes/_authenticated/members/index'
+import { Route as AuthenticatedFirstTimersIndexRouteImport } from './routes/_authenticated/first-timers/index'
 import { Route as AuthenticatedDirectoryIndexRouteImport } from './routes/_authenticated/directory/index'
 import { Route as AuthenticatedDeskIndexRouteImport } from './routes/_authenticated/desk/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -98,6 +99,12 @@ const AuthenticatedMembersIndexRoute =
     path: '/members/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedFirstTimersIndexRoute =
+  AuthenticatedFirstTimersIndexRouteImport.update({
+    id: '/first-timers/',
+    path: '/first-timers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDirectoryIndexRoute =
   AuthenticatedDirectoryIndexRouteImport.update({
     id: '/directory/',
@@ -160,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/desk/': typeof AuthenticatedDeskIndexRoute
   '/directory/': typeof AuthenticatedDirectoryIndexRoute
+  '/first-timers/': typeof AuthenticatedFirstTimersIndexRoute
   '/members/': typeof AuthenticatedMembersIndexRoute
   '/reports/': typeof AuthenticatedReportsIndexRoute
   '/scan/': typeof AuthenticatedScanIndexRoute
@@ -182,6 +190,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/desk': typeof AuthenticatedDeskIndexRoute
   '/directory': typeof AuthenticatedDirectoryIndexRoute
+  '/first-timers': typeof AuthenticatedFirstTimersIndexRoute
   '/members': typeof AuthenticatedMembersIndexRoute
   '/reports': typeof AuthenticatedReportsIndexRoute
   '/scan': typeof AuthenticatedScanIndexRoute
@@ -206,6 +215,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/desk/': typeof AuthenticatedDeskIndexRoute
   '/_authenticated/directory/': typeof AuthenticatedDirectoryIndexRoute
+  '/_authenticated/first-timers/': typeof AuthenticatedFirstTimersIndexRoute
   '/_authenticated/members/': typeof AuthenticatedMembersIndexRoute
   '/_authenticated/reports/': typeof AuthenticatedReportsIndexRoute
   '/_authenticated/scan/': typeof AuthenticatedScanIndexRoute
@@ -230,6 +240,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/desk/'
     | '/directory/'
+    | '/first-timers/'
     | '/members/'
     | '/reports/'
     | '/scan/'
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/desk'
     | '/directory'
+    | '/first-timers'
     | '/members'
     | '/reports'
     | '/scan'
@@ -275,6 +287,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/'
     | '/_authenticated/desk/'
     | '/_authenticated/directory/'
+    | '/_authenticated/first-timers/'
     | '/_authenticated/members/'
     | '/_authenticated/reports/'
     | '/_authenticated/scan/'
@@ -385,6 +398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMembersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/first-timers/': {
+      id: '/_authenticated/first-timers/'
+      path: '/first-timers'
+      fullPath: '/first-timers/'
+      preLoaderRoute: typeof AuthenticatedFirstTimersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/directory/': {
       id: '/_authenticated/directory/'
       path: '/directory'
@@ -454,6 +474,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedDeskIndexRoute: typeof AuthenticatedDeskIndexRoute
   AuthenticatedDirectoryIndexRoute: typeof AuthenticatedDirectoryIndexRoute
+  AuthenticatedFirstTimersIndexRoute: typeof AuthenticatedFirstTimersIndexRoute
   AuthenticatedMembersIndexRoute: typeof AuthenticatedMembersIndexRoute
   AuthenticatedReportsIndexRoute: typeof AuthenticatedReportsIndexRoute
   AuthenticatedScanIndexRoute: typeof AuthenticatedScanIndexRoute
@@ -471,6 +492,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedDeskIndexRoute: AuthenticatedDeskIndexRoute,
   AuthenticatedDirectoryIndexRoute: AuthenticatedDirectoryIndexRoute,
+  AuthenticatedFirstTimersIndexRoute: AuthenticatedFirstTimersIndexRoute,
   AuthenticatedMembersIndexRoute: AuthenticatedMembersIndexRoute,
   AuthenticatedReportsIndexRoute: AuthenticatedReportsIndexRoute,
   AuthenticatedScanIndexRoute: AuthenticatedScanIndexRoute,

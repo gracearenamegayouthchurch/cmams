@@ -122,3 +122,45 @@ export type IssuedCard = {
   shortCode: string
   credential: string
 }
+
+
+export type FirstTimerPerson = {
+  id: string
+  member_code: string
+  first_name: string
+  middle_name: string | null
+  last_name: string
+  phone: string | null
+  email: string | null
+  lifecycle_stage: string
+  registered_at: string
+  room: string | null
+  birth_month: number | null
+  birth_day: number | null
+  birth_year: number | null
+  compound_name: string | null
+  compound_region: string | null
+  cell_id: string | null
+  cell_name: string | null
+  cell_region: string | null
+  departments: string[]
+  attendance_count: number
+  first_attended_at: string | null
+  last_attended_at: string | null
+  first_service_name: string | null
+}
+
+export type FirstTimersResponse = {
+  summary: {
+    activeFirstTimers: number
+    newThisMonth: number
+    promotedCount: number
+    unassignedCellCount: number
+    totalTracked: number
+  }
+  people: FirstTimerPerson[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}

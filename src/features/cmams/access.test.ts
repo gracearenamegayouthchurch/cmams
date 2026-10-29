@@ -1,20 +1,23 @@
 import { expect, it } from 'vitest'
 import { visibleNavigation } from './access'
 
-it('shows the registration desk scan, registration and members', () => {
+it('shows the registration desk scan, registration, first-timers, and members', () => {
   expect(visibleNavigation('REGISTRATION_DESK')).toEqual([
     'Scan',
     'Registration',
+    'First-Timers',
     'Members',
   ])
   expect(visibleNavigation('PASTOR_VIEWER')).toEqual([
     'Dashboard',
     'Analytics',
+    'First-Timers',
     'Members',
     'Reports',
     'Cells',
   ])
   expect(visibleNavigation('SERVICE_SUPERVISOR')).toContain('Analytics')
+  expect(visibleNavigation('SERVICE_SUPERVISOR')).toContain('First-Timers')
   expect(visibleNavigation('CELL_LEADER')).not.toContain('Analytics')
 })
 
