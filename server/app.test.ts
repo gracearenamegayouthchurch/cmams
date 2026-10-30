@@ -12,6 +12,30 @@ afterEach(() => {
 })
 
 describe('API boundary', () => {
+  it('lets an assigned leader update their cell location but not its name', async () => {
+    process.env.SESSION_SECRET = secret
+    const cellId = '11111111-1111-4111-8111-111111111111'
+    mocked.query.mockResolvedValue({ rows: [{ id: 'staff', full_name: 'Leader', email: 'leader@example.org', role: 'CELL_LEADER', session_version: 0 }] })
+    const statements: string[] = []
+    mocked.connect.mockResolvedValue({
+      query: async (sql: string) => {
+        statements.push(sql)
+        if (sql.startsWith('SELECT id FROM cells')) return { rows: [{ id: cellId }] }
+        if (sql.includes('FROM cell_leader_assignments')) return { rows: [{ cell_id: cellId }] }
+        if (sql.startsWith('UPDATE cells')) return { rows: [{ id: cellId, meeting_location: 'Hall B' }] }
+        return { rows: [] }
+      }, release: () => {},
+    })
+    const token = signSession({ id: 'staff', role: 'CELL_LEADER' }, secret)
+    const headers = { origin: 'https://church.example', 'content-type': 'application/json', cookie: `cmams_session=${token}` }
+    const url = `https://church.example/api/v1/cells/${cellId}/location`
+    const result = await handleApi(new Request(url, { method: 'PATCH', headers, body: JSON.stringify({ location: 'Hall B' }) }))
+    expect(result.status).toBe(200)
+    expect(await result.json()).toMatchObject({ cell: { meeting_location: 'Hall B' } })
+    const denied = await handleApi(new Request(url, { method: 'PATCH', headers, body: JSON.stringify({ location: 'Hall B', name: 'Stolen' }) }))
+    expect(denied.status).toBe(400)
+    expect(statements.filter((sql) => sql.startsWith('UPDATE cells'))).toHaveLength(1)
+  })
   it('never exposes a different cell member list to a cell leader', async () => {
     process.env.SESSION_SECRET = secret
     mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
@@ -322,6 +346,32 @@ describe('API boundary', () => {
     )
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ services: [] })
+  })
+  it('creates a service for a supervisor but not for the registration desk', async () => {
+    process.env.SESSION_SECRET = secret
+    let role = 'SERVICE_SUPERVISOR'
+    const inserts: unknown[][] = []
+    mocked.query.mockImplementation(async (sql: string, values?: unknown[]) => {
+      if (sql.includes('staff_users')) return { rows: [{ id: 'staff', full_name: 'Staff', email: 'staff@example.org', role, session_version: 0 }] }
+      if (sql.includes('INSERT INTO services')) {
+        inserts.push(values ?? [])
+        return { rows: [{ id: 'service', name: 'Sunday Service', status: 'SCHEDULED' }] }
+      }
+      return { rows: [] }
+    })
+    const payload = JSON.stringify({ name: 'Sunday Service', category: 'SUNDAY_SERVICE', scheduledStartAt: '2026-11-01T08:00:00Z', opensAt: '2026-11-01T07:00:00Z', closesAt: '2026-11-01T10:00:00Z' })
+    const post = (actor: 'SERVICE_SUPERVISOR' | 'REGISTRATION_DESK', body = payload) => handleApi(new Request('https://church.example/api/v1/services', {
+      method: 'POST', headers: { origin: 'https://church.example', 'content-type': 'application/json', cookie: `cmams_session=${signSession({ id: 'staff', role: actor }, secret)}` }, body,
+    }))
+    const created = await post('SERVICE_SUPERVISOR')
+    expect(created.status).toBe(201)
+    expect(await created.json()).toMatchObject({ service: { status: 'SCHEDULED' } })
+    const invalid = await post('SERVICE_SUPERVISOR', JSON.stringify({ ...JSON.parse(payload), closesAt: '2026-11-01T06:00:00Z' }))
+    expect(invalid.status).toBe(400)
+    role = 'REGISTRATION_DESK'
+    const denied = await post('REGISTRATION_DESK')
+    expect(denied.status).toBe(403)
+    expect(inserts).toHaveLength(1)
   })
   it('lets the registration desk scan a card without permission to manage services', async () => {
     process.env.SESSION_SECRET = secret

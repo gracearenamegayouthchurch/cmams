@@ -1,5 +1,24 @@
 import { expect, it, vi } from 'vitest'
-import { validateService, changeServiceStatus } from './services.js'
+import { validateService, changeServiceStatus, createService } from './services.js'
+
+it('persists an authorized scheduled service with its check-in window', async () => {
+  const writes: unknown[][] = []
+  const db = { query: async (sql: string, params: unknown[]) => {
+    if (sql.startsWith('INSERT INTO services')) {
+      writes.push(params)
+      return { rows: [{ id: 'service', name: 'Sunday service', status: 'SCHEDULED' }] }
+    }
+    throw new Error('Unexpected database query')
+  } }
+  const result = await createService(db as never, {
+    name: ' Sunday service ', category: 'SUNDAY_SERVICE',
+    scheduledStartAt: '2026-11-01T08:00:00Z',
+    opensAt: '2026-11-01T07:00:00Z',
+    closesAt: '2026-11-01T10:00:00Z',
+  }, 'supervisor')
+  expect(result).toMatchObject({ name: 'Sunday service', status: 'SCHEDULED' })
+  expect(writes).toEqual([['Sunday service', 'SUNDAY_SERVICE', '2026-11-01T08:00:00Z', '2026-11-01T07:00:00Z', '2026-11-01T10:00:00Z', 'supervisor']])
+})
 
 function mockClient(handler: (sql: string) => { rows: unknown[] }) {
   const query = vi.fn(async (sql: string) => handler(sql))

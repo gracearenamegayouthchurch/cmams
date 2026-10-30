@@ -5,6 +5,7 @@ import {
   listCellMembers,
   requireCellScope,
   updateCell,
+  updateCellLocation,
 } from './cells.js'
 
 const cellId = '11111111-1111-4111-8111-111111111111'
@@ -69,4 +70,102 @@ it('rejects a cell without one of the four regions', async () => {
   await expect(
     createCell(db as never, { name: 'Unknown', location: 'Hall', region: 'UNKNOWN' }, { id: 'staff', role: 'ADMIN' })
   ).rejects.toThrow()
+})
+
+it('creates a cell without a meeting location and stores null', async () => {
+  const params: unknown[][] = []
+  const db = { connect: async () => ({
+    query: async (sql: string, values?: unknown[]) => {
+      if (sql.startsWith('INSERT INTO cells')) {
+        params.push(values ?? [])
+        return { rows: [{ id: cellId, meeting_location: null }] }
+      }
+      return { rows: [] }
+    },
+    release: () => {},
+  }) }
+  const cell = await createCell(db as never, { name: 'Across Region 9', region: 'ACROSS' }, { id: 'staff', role: 'ADMIN' })
+  expect(cell.meeting_location).toBeNull()
+  expect(params[0]).toEqual(['Across Region 9', null, 'ACROSS'])
+})
+
+it('lets an assigned leader set only the location of their active cell', async () => {
+  const queries: { sql: string; params?: unknown[] }[] = []
+  const db = { connect: async () => ({
+    query: async (sql: string, params?: unknown[]) => {
+      queries.push({ sql, params })
+      if (sql.startsWith('SELECT id FROM cells')) return { rows: [{ id: cellId }] }
+      if (sql.includes('FROM cell_leader_assignments')) return { rows: [{ cell_id: cellId }] }
+      if (sql.startsWith('UPDATE cells')) return { rows: [{ id: cellId, meeting_location: 'Hall B' }] }
+      return { rows: [] }
+    }, release: () => {},
+  }) }
+  const cell = await updateCellLocation(db as never, cellId, { location: ' Hall B ' }, { id: 'leader', role: 'CELL_LEADER' })
+  expect(cell.meeting_location).toBe('Hall B')
+  expect(queries.find(({ sql }) => sql.startsWith('UPDATE cells'))?.params).toEqual([cellId, 'Hall B'])
+  expect(queries.some(({ sql }) => sql.includes('CELL_UPDATED'))).toBe(true)
+  expect(queries.at(-1)?.sql).toBe('COMMIT')
+})
+
+it('denies a leader without an active assignment before changing a location', async () => {
+  const statements: string[] = []
+  const db = { connect: async () => ({
+    query: async (sql: string) => { statements.push(sql); return { rows: sql.startsWith('SELECT id FROM cells') ? [{ id: cellId }] : [] } },
+    release: () => {},
+  }) }
+  await expect(updateCellLocation(db as never, cellId, { location: 'Hall' }, { id: 'leader', role: 'CELL_LEADER' })).rejects.toBeInstanceOf(CellAccessError)
+  expect(statements.some((sql) => sql.startsWith('UPDATE cells'))).toBe(false)
+  expect(statements.at(-1)).toBe('ROLLBACK')
+})
+
+it('rejects extra fields and blank locations on the location-only action', async () => {
+  const db = { connect: async () => { throw new Error('should not connect') } }
+  const admin = { id: 'staff', role: 'ADMIN' as const }
+  await expect(updateCellLocation(db as never, cellId, { location: 'Hall', name: 'Changed' }, admin)).rejects.toThrow()
+  await expect(updateCellLocation(db as never, cellId, { location: '  ' }, admin)).rejects.toThrow()
+})
+
+it('does not let an assigned leader edit another cell or an archived cell', async () => {
+  for (const active of [true, false]) {
+    const statements: string[] = []
+    const db = { connect: async () => ({
+      query: async (sql: string) => {
+        statements.push(sql)
+        if (sql.startsWith('SELECT id FROM cells')) return { rows: active ? [{ id: cellId }] : [] }
+        return { rows: [] }
+      }, release: () => {},
+    }) }
+    await expect(updateCellLocation(db as never, cellId, { location: 'Hall' }, { id: 'other-leader', role: 'CELL_LEADER' })).rejects.toBeInstanceOf(CellAccessError)
+    expect(statements.some((sql) => sql.startsWith('UPDATE cells'))).toBe(false)
+  }
+})
+
+it('allows an administrator or pastor to assign a location but denies unrelated staff', async () => {
+  for (const role of ['ADMIN', 'PASTOR_VIEWER'] as const) {
+    const statements: string[] = []
+    const db = { connect: async () => ({
+      query: async (sql: string) => {
+        statements.push(sql)
+        if (sql.startsWith('SELECT id FROM cells')) return { rows: [{ id: cellId }] }
+        if (sql.startsWith('UPDATE cells')) return { rows: [{ id: cellId, meeting_location: 'Hall' }] }
+        return { rows: [] }
+      }, release: () => {},
+    }) }
+    await expect(updateCellLocation(db as never, cellId, { location: ' Hall ' }, { id: 'staff', role })).resolves.toMatchObject({ meeting_location: 'Hall' })
+    expect(statements.some((sql) => sql.includes('FROM cell_leader_assignments'))).toBe(false)
+  }
+  const db = { connect: async () => { throw new Error('should not connect') } }
+  await expect(updateCellLocation(db as never, cellId, { location: 'Hall' }, { id: 'staff', role: 'REGISTRATION_DESK' })).rejects.toBeInstanceOf(CellAccessError)
+})
+
+it('updates a cell without a location while retaining its name and region', async () => {
+  const params: unknown[][] = []
+  const db = { connect: async () => ({
+    query: async (sql: string, values?: unknown[]) => {
+      if (sql.startsWith('UPDATE cells')) { params.push(values ?? []); return { rows: [{ id: cellId, meeting_location: null }] } }
+      return { rows: [] }
+    }, release: () => {},
+  }) }
+  await updateCell(db as never, cellId, { name: 'Ndar Region 8', region: 'NDAR', location: '  ' }, { id: 'staff', role: 'PASTOR_VIEWER' })
+  expect(params).toEqual([[cellId, 'Ndar Region 8', null, 'NDAR']])
 })

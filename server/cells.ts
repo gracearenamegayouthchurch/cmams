@@ -12,9 +12,10 @@ export class CellAccessError extends Error {
 
 const cellFields = z.object({
   name: z.string().trim().min(1).max(100),
-  location: z.string().trim().min(1).max(200),
+  location: z.string().trim().max(200).nullish(),
   region: compoundRegion,
 })
+const locationFields = z.object({ location: z.string().trim().min(1).max(200) }).strict()
 
 function manager(actor: CellActor) {
   if (actor.role !== 'ADMIN' && actor.role !== 'PASTOR_VIEWER') throw new CellAccessError()
@@ -91,7 +92,7 @@ export async function createCell(db: Db, input: unknown, actor: CellActor) {
     await client.query('BEGIN')
     const result = await client.query(
       'INSERT INTO cells(name,meeting_location,region) VALUES($1,$2,$3) RETURNING id,name,meeting_location,region,is_active',
-      [data.name, data.location, data.region]
+      [data.name, data.location || null, data.region]
     )
     await client.query(
       `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
@@ -115,7 +116,41 @@ export async function updateCell(db: Db, cellId: string, input: unknown, actor: 
     const result = await client.query(
       `UPDATE cells SET name=$2,meeting_location=$3,region=$4,updated_at=now()
        WHERE id=$1 AND is_active=true RETURNING id,name,meeting_location,region,is_active`,
-      [id, data.name, data.location, data.region]
+      [id, data.name, data.location || null, data.region]
+    )
+    if (!result.rows.length) throw new CellAccessError()
+    await client.query(
+      `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
+       VALUES($1,'CELL_UPDATED','cell',$2)`, [actor.id, id]
+    )
+    await client.query('COMMIT')
+    return result.rows[0]
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally { client.release() }
+}
+
+export async function updateCellLocation(db: Db, cellId: string, input: unknown, actor: CellActor) {
+  if (!['ADMIN', 'PASTOR_VIEWER', 'CELL_LEADER'].includes(actor.role)) throw new CellAccessError()
+  const id = z.uuid().parse(cellId)
+  const { location } = locationFields.parse(input)
+  const client = await db.connect()
+  try {
+    await client.query('BEGIN')
+    const active = await client.query('SELECT id FROM cells WHERE id=$1 AND is_active=true FOR UPDATE', [id])
+    if (!active.rows.length) throw new CellAccessError()
+    if (actor.role === 'CELL_LEADER') {
+      const assignment = await client.query(
+        `SELECT cell_id FROM cell_leader_assignments WHERE cell_id=$1 AND staff_id=$2 AND valid_to IS NULL`,
+        [id, actor.id]
+      )
+      if (!assignment.rows.length) throw new CellAccessError()
+    }
+    const result = await client.query(
+      `UPDATE cells SET meeting_location=$2,updated_at=now() WHERE id=$1 AND is_active=true
+       RETURNING id,name,meeting_location,region,is_active`,
+      [id, location]
     )
     if (!result.rows.length) throw new CellAccessError()
     await client.query(

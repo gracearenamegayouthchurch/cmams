@@ -84,6 +84,167 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('CMAMS browser workflows', () => {
+  it('schedules a service with a usable Sunday check-in window', async () => {
+    const writes: Record<string, string>[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === '/api/v1/services' && init?.method === 'POST') {
+          writes.push(JSON.parse(String(init.body)))
+          return jsonResponse(
+            {
+              service: {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Sunday Service',
+                status: 'SCHEDULED',
+              },
+            },
+            201
+          )
+        }
+        if (String(input) === '/api/v1/services')
+          return jsonResponse({ services: [] })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<ServicesPage />)
+    await userEvent.click(screen.getByRole('button', { name: 'Sunday 8 AM' }))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Schedule service' })
+    )
+    await expect.element(screen.getByText('Service scheduled.')).toBeVisible()
+    expect(writes).toHaveLength(1)
+    expect(writes[0].name).toBe('Sunday Service')
+    expect(writes[0].category).toBe('SUNDAY_SERVICE')
+    expect(Date.parse(writes[0].opensAt)).toBeLessThan(
+      Date.parse(writes[0].scheduledStartAt)
+    )
+    expect(Date.parse(writes[0].closesAt)).toBeGreaterThan(
+      Date.parse(writes[0].scheduledStartAt)
+    )
+  })
+  it('lets an Admin create a cell without a meeting place', async () => {
+    const sent: unknown[] = []
+    let created = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input)
+        if (path === '/api/v1/session')
+          return jsonResponse({
+            staff: {
+              id: 'admin',
+              role: 'ADMIN',
+              full_name: 'Admin',
+              email: 'admin@example.org',
+            },
+          })
+        if (path === '/api/v1/cells' && init?.method === 'POST') {
+          sent.push(JSON.parse(String(init.body)))
+          created = true
+          return jsonResponse(
+            {
+              cell: {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Across Region 9',
+                meeting_location: null,
+                region: 'ACROSS',
+                is_active: true,
+              },
+            },
+            201
+          )
+        }
+        if (path === '/api/v1/cells')
+          return jsonResponse({
+            cells: created
+              ? [
+                  {
+                    id: '11111111-1111-4111-8111-111111111111',
+                    name: 'Across Region 9',
+                    meeting_location: null,
+                    region: 'ACROSS',
+                    is_active: true,
+                  },
+                ]
+              : [],
+          })
+        if (path === '/api/v1/cell-leaders')
+          return jsonResponse({ leaders: [] })
+        if (path.endsWith('/members')) return jsonResponse({ members: [] })
+        if (path.endsWith('/meetings')) return jsonResponse({ meetings: [] })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<CellsPage />)
+    await userEvent.type(screen.getByLabelText('Cell name'), 'Across Region 9')
+    await userEvent.click(screen.getByLabelText('Region'))
+    await userEvent.click(page.getByRole('option', { name: 'Across' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create cell' }))
+    await expect.element(screen.getByText('Cell created.')).toBeVisible()
+    expect(sent).toEqual([
+      { name: 'Across Region 9', location: '', region: 'ACROSS' },
+    ])
+    await expect
+      .element(screen.getByText(/Location not assigned/))
+      .toBeVisible()
+  })
+
+  it('lets a leader set only their assigned cell location', async () => {
+    const calls: { path: string; body: unknown }[] = []
+    let location: string | null = null
+    const id = '11111111-1111-4111-8111-111111111111'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input)
+        if (path === '/api/v1/session')
+          return jsonResponse({
+            staff: {
+              id: 'leader',
+              role: 'CELL_LEADER',
+              full_name: 'Leader',
+              email: 'leader@example.org',
+            },
+          })
+        if (path === '/api/v1/cells')
+          return jsonResponse({
+            cells: [
+              {
+                id,
+                name: 'Ndar Region 8',
+                meeting_location: location,
+                region: 'NDAR',
+                is_active: true,
+              },
+            ],
+          })
+        if (
+          path === `/api/v1/cells/${id}/location` &&
+          init?.method === 'PATCH'
+        ) {
+          calls.push({ path, body: JSON.parse(String(init.body)) })
+          location = 'Hall A'
+          return jsonResponse({ cell: { id, meeting_location: location } })
+        }
+        if (path.endsWith('/members')) return jsonResponse({ members: [] })
+        if (path.endsWith('/meetings')) return jsonResponse({ meetings: [] })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<CellsPage />)
+    await expect
+      .element(screen.getByText(/Location not assigned/))
+      .toBeVisible()
+    expect(screen.getByRole('button', { name: 'Edit cell' }).query()).toBeNull()
+    await userEvent.type(screen.getByLabelText('Meeting location'), 'Hall A')
+    await userEvent.click(screen.getByRole('button', { name: 'Save location' }))
+    await expect.element(screen.getByText('Location updated.')).toBeVisible()
+    expect(calls).toEqual([
+      { path: `/api/v1/cells/${id}/location`, body: { location: 'Hall A' } },
+    ])
+    await expect.element(screen.getByText(/Hall A/)).toBeVisible()
+  })
   it('lets an Admin create a named cell group in a region', async () => {
     const sent: { path: string; body: string | null | undefined }[] = []
     vi.stubGlobal(

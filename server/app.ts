@@ -36,7 +36,7 @@ import {
   renameCatalogEntry,
   updateCompound,
 } from './catalogs.js'
-import { archiveCell, assignLeader, assignMember, CellAccessError, createCell, listCellLeaders, listCellMembers, listCells, updateCell } from './cells.js'
+import { archiveCell, assignLeader, assignMember, CellAccessError, createCell, listCellLeaders, listCellMembers, listCells, updateCell, updateCellLocation } from './cells.js'
 import { CellMeetingError, createCellMeeting, listCellMeetingAttendance, listCellMeetings, scanCellCard, transitionCellMeeting } from './cell-meetings.js'
 import { StaffError, changeOwnPassword, createStaff, listStaff, resetStaffPassword, updateStaff } from './staff.js'
 import {
@@ -614,6 +614,9 @@ export async function handleApi(request: Request): Promise<Response> {
     const cellEdit = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})$/i)
     if (cellEdit && method === 'PATCH')
       return json({ cell: await updateCell(getDb(), cellEdit[1], await request.json(), staff) })
+    const cellLocation = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})\/location$/i)
+    if (cellLocation && method === 'PATCH')
+      return json({ cell: await updateCellLocation(getDb(), cellLocation[1], await request.json(), staff) })
     const cellMembers = path.match(/^\/api\/v1\/cells\/([0-9a-f-]{36})\/members$/i)
     if (cellMembers && method === 'GET')
       return json({ members: await listCellMembers(getDb(), staff, cellMembers[1]) })

@@ -32,7 +32,7 @@ import { type PaginatedPeople } from './types'
 type Cell = {
   id: string
   name: string
-  meeting_location: string
+  meeting_location: string | null
   region: string
   is_active: boolean
 }
@@ -128,6 +128,7 @@ export function CellsPage() {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
   const [location, setLocation] = useState('')
+  const [leaderLocation, setLeaderLocation] = useState('')
   const [region, setRegion] = useState('')
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
@@ -261,11 +262,13 @@ export function CellsPage() {
                 </Label>
                 <Input
                   id='new-cell-location'
-                  required
                   maxLength={200}
                   value={newLocation}
                   onChange={(event) => setNewLocation(event.target.value)}
                 />
+                <p className='text-xs text-muted-foreground'>
+                  Optional — assign later if not known.
+                </p>
               </div>
               <div className='min-w-40 flex-1 space-y-1'>
                 <Label htmlFor='new-cell-region'>Region</Label>
@@ -334,7 +337,7 @@ export function CellsPage() {
               <CardTitle>{selected.name}</CardTitle>
               <CardDescription>
                 {regionLabel(selected.region)} region · Saturday meeting place:{' '}
-                {selected.meeting_location}
+                {selected.meeting_location || 'Location not assigned'}
                 {selected.is_active ? '' : ' · archived'}
               </CardDescription>
             </CardHeader>
@@ -368,7 +371,6 @@ export function CellsPage() {
                       <Label htmlFor='edit-cell-location'>Location</Label>
                       <Input
                         id='edit-cell-location'
-                        required
                         value={location}
                         onChange={(event) => setLocation(event.target.value)}
                       />
@@ -403,7 +405,7 @@ export function CellsPage() {
                       variant='outline'
                       onClick={() => {
                         setName(selected.name)
-                        setLocation(selected.meeting_location)
+                        setLocation(selected.meeting_location ?? '')
                         setRegion(selected.region)
                         setEditing(true)
                       }}
@@ -509,6 +511,45 @@ export function CellsPage() {
                     Assign member
                   </Button>
                 </div>
+              </CardContent>
+            )}
+            {role === 'CELL_LEADER' && selected.is_active && (
+              <CardContent>
+                <form
+                  className='flex flex-wrap items-end gap-3'
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void act(
+                      () =>
+                        api(`/api/v1/cells/${selected.id}/location`, {
+                          method: 'PATCH',
+                          body: JSON.stringify({ location: leaderLocation }),
+                        }),
+                      'Location updated.'
+                    )
+                  }}
+                >
+                  <div className='min-w-48 flex-1 space-y-1'>
+                    <Label htmlFor='leader-cell-location'>
+                      Meeting location
+                    </Label>
+                    <Input
+                      id='leader-cell-location'
+                      required
+                      maxLength={200}
+                      value={leaderLocation}
+                      onChange={(event) =>
+                        setLeaderLocation(event.target.value)
+                      }
+                      placeholder={
+                        selected.meeting_location || 'Assign a meeting place'
+                      }
+                    />
+                  </div>
+                  <Button disabled={busy || !leaderLocation.trim()}>
+                    Save location
+                  </Button>
+                </form>
               </CardContent>
             )}
           </Card>

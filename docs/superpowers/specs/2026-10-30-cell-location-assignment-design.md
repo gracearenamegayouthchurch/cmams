@@ -12,7 +12,7 @@ Add exactly two active cell groups, **Across Region 9** (region `ACROSS`) and **
 
 ## Permissions and interfaces
 
-- Keep the existing admin/pastor `PUT /api/v1/cells/:id` for full edits, validating nonempty name and region and accepting an optional location. Existing roles do not gain full edit capability.
+- Keep the existing admin/pastor `PATCH /api/v1/cells/:id` for full edits, validating nonempty name and region and accepting an optional location. Existing roles do not gain full edit capability.
 - Add a separate location-only update route for an assigned cell leader (and admins/pastors), e.g. `PATCH /api/v1/cells/:id/location`, accepting only a nonblank trimmed `location`. On every request, verify the leader's current assignment to the active target cell in the database; an arbitrary ID or old assignment grants no access. Do not accept changes to cell name, region, assignments, or meeting data on this route. Audit the change using the existing cell update action.
 - Show a location editor on the cell page for an assigned leader and on the management page for admins/pastors. A leader sees and edits only their own cell; other roles do not see the action. Use a clear success/error state and refresh the cell query after success.
 
