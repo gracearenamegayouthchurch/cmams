@@ -54,6 +54,23 @@ const loginFields = z.object({
   password: z.string().min(1).max(200),
 })
 const cookieName = 'cmams_session'
+const registrationFieldMessages: Record<string, string> = {
+  firstName: 'Check the first name and try again.',
+  lastName: 'Check the last name and try again.',
+  middleName: 'Check the middle name and try again.',
+  email: 'Check the email address and try again.',
+  region: 'Choose a valid region and try again.',
+  compoundName: 'Enter a valid compound name and try again.',
+  room: 'Check the room and try again.',
+  departmentId: 'Choose a valid department and try again.',
+  cellId: 'Choose a valid cell group and try again.',
+  birthMonth: 'Choose a valid birth month and try again.',
+  birthDay: 'Choose a valid birth day and try again.',
+  birthYear: 'Check the birth year and try again.',
+  phone: 'Enter a phone number with country code and no spaces (e.g. +2348031234567), or leave it blank.',
+  householdId: 'Choose a valid household and try again.',
+  consent: 'Confirm privacy consent before registering.',
+}
 
 function json(data: unknown, status = 200, headers?: HeadersInit): Response {
   return Response.json(data, {
@@ -757,6 +774,13 @@ export async function handleApi(request: Request): Promise<Response> {
       return json({ error: error.message }, 409)
     if (error instanceof Error && error.message === 'Invalid card format')
       return json({ error: error.message }, 400)
+    if (error instanceof z.ZodError && path === '/api/v1/people' && method === 'POST') {
+      const field = String(error.issues[0]?.path[0] ?? '')
+      return json({
+        error: registrationFieldMessages[field] ?? 'Invalid request',
+        code: 'REGISTRATION_VALIDATION_ERROR',
+      }, 400)
+    }
     if (error instanceof z.ZodError || error instanceof SyntaxError)
       return json({ error: 'Invalid request' }, 400)
     process.stderr.write(

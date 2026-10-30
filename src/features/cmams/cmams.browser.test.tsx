@@ -384,7 +384,9 @@ describe('CMAMS browser workflows', () => {
         if (url.endsWith('/close') && init?.method === 'POST') {
           closeRequests++
           closed = true
-          return jsonResponse({ service: { id: 'service', status: 'CHECKIN_CLOSED' } })
+          return jsonResponse({
+            service: { id: 'service', status: 'CHECKIN_CLOSED' },
+          })
         }
         if (url === '/api/v1/services')
           return jsonResponse({
@@ -627,6 +629,53 @@ describe('CMAMS browser workflows', () => {
     await expect
       .element(screen.getByRole('button', { name: 'Register person' }))
       .toBeDisabled()
+  })
+
+  it('explains phone format before submitting a registration', async () => {
+    let registrationPosts = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/v1/catalogs')
+          return jsonResponse({
+            compounds: [],
+            departments: [],
+            regions: [{ code: 'NDAR', label: 'Ndar' }],
+          })
+        if (url === '/api/v1/cells') return jsonResponse({ cells: [] })
+        if (url === '/api/v1/services') return jsonResponse({ services: [] })
+        if (url === '/api/v1/people' && init?.method === 'POST') {
+          registrationPosts++
+          return jsonResponse({ error: 'Invalid request' }, 400)
+        }
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<DeskPage />)
+    await userEvent.type(screen.getByLabelText('First name'), 'Ada')
+    await userEvent.type(screen.getByLabelText('Last name'), 'Okafor')
+    await userEvent.type(
+      screen.getByLabelText('Phone number (optional)'),
+      '08031234567'
+    )
+    await userEvent.type(screen.getByLabelText('Email'), 'ada@example.org')
+    await userEvent.click(screen.getByLabelText('Region'))
+    await userEvent.click(page.getByRole('option', { name: 'Ndar' }))
+    await userEvent.type(screen.getByLabelText('Compound'), 'Main')
+    await userEvent.click(screen.getByLabelText('Birth month'))
+    await userEvent.click(page.getByRole('option', { name: 'January' }))
+    await userEvent.type(screen.getByLabelText('Birth day'), '6')
+    await userEvent.click(
+      screen.getByLabelText('Person agrees to this privacy notice')
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Register person' })
+    )
+    await expect
+      .element(screen.getByRole('alert'))
+      .toHaveTextContent(/phone number with country code and no spaces/i)
+    expect(registrationPosts).toBe(0)
   })
 
   it('toggles between new and existing members and checks an existing member in', async () => {

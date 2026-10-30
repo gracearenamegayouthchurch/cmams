@@ -209,6 +209,52 @@ describe('API boundary', () => {
       person: { member_code: 'CM-1001' },
     })
   })
+  it('returns safe field-specific registration validation errors before database writes', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockResolvedValue({
+      rows: [{ id: 'staff', full_name: 'Desk', email: 'desk@example.org', role: 'REGISTRATION_DESK', session_version: 0 }],
+    })
+    mocked.connect.mockClear()
+    const token = signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)
+    const valid = {
+      firstName: 'Ada', lastName: 'Okafor', email: 'ada@example.org', region: 'ACROSS',
+      compoundName: 'East Gate', birthMonth: 10, birthDay: 12, consent: true,
+    }
+    for (const [invalid, field] of [
+      [{ phone: '08031234567' }, 'phone'],
+      [{ email: 'not-an-email' }, 'email'],
+      [{ birthMonth: 2, birthDay: 30 }, 'birth day'],
+      [{ departmentId: 'Choir' }, 'department'],
+    ] as const) {
+      const response = await handleApi(new Request('https://church.example/api/v1/people', {
+        method: 'POST',
+        headers: { origin: 'https://church.example', 'content-type': 'application/json', cookie: `cmams_session=${token}` },
+        body: JSON.stringify({ ...valid, ...invalid }),
+      }))
+      expect(response.status).toBe(400)
+      const body = await response.json()
+      expect(body).toMatchObject({ code: 'REGISTRATION_VALIDATION_ERROR', error: expect.stringMatching(new RegExp(field, 'i')) })
+      for (const value of Object.values(invalid)) {
+        if (typeof value === 'string') expect(JSON.stringify(body)).not.toContain(value)
+      }
+    }
+    expect(mocked.connect).not.toHaveBeenCalled()
+  })
+
+  it('keeps malformed registration JSON generic', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.query.mockResolvedValue({
+      rows: [{ id: 'staff', full_name: 'Desk', email: 'desk@example.org', role: 'REGISTRATION_DESK', session_version: 0 }],
+    })
+    const token = signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)
+    const response = await handleApi(new Request('https://church.example/api/v1/people', {
+      method: 'POST',
+      headers: { origin: 'https://church.example', 'content-type': 'application/json', cookie: `cmams_session=${token}` },
+      body: '{',
+    }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'Invalid request' })
+  })
   it('denies a registration desk staff member replacement of an active card', async () => {
     process.env.SESSION_SECRET = secret
     mocked.query.mockResolvedValue({

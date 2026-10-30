@@ -224,6 +224,12 @@ export function DeskPage() {
       )
       return
     }
+    if (phone && !/^\+[1-9]\d{7,14}$/.test(phone)) {
+      setError(
+        'Enter a phone number with country code and no spaces (e.g. +2348031234567), or leave it blank.'
+      )
+      return
+    }
     setBusy(true)
     setCard(null)
     try {
@@ -756,7 +762,9 @@ export function DeskPage() {
             ) : (
               <div className='space-y-4'>
                 <div className='space-y-1.5'>
-                  <Label htmlFor='member-search'>Search members by name, phone or code</Label>
+                  <Label htmlFor='member-search'>
+                    Search members by name, phone or code
+                  </Label>
                   <div className='relative'>
                     <Search
                       className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground'
@@ -775,7 +783,8 @@ export function DeskPage() {
                     />
                   </div>
                   <p className='text-xs text-muted-foreground'>
-                    Search by name, phone number or member code before creating a new record.
+                    Search by name, phone number or member code before creating
+                    a new record.
                   </p>
                 </div>
 
