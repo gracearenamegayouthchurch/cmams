@@ -1,0 +1,19 @@
+# BulkSMSNigeria welcome SMS setup
+
+The SMS implementation is **not live by default**. Its database setting starts with `enabled=false`, `welcome_mode=MANUAL`. No production migration, token configuration, scheduler registration, or real SMS has been performed by this worktree.
+
+## Before enabling
+
+1. Review and apply `supabase/migrations/011_sms_outbox.sql` to the **church database** after the earlier migrations. Verify the target project before running SQL. This creates `sms_settings` and `sms_outbox`; registration requires this migration before deploying the new backend.
+2. Create an account at [BulkSMSNigeria](https://www.bulksmsnigeria.com/), fund it, generate an API token, and get the sender ID approved (up to 11 characters). Their [API reference](https://www.bulksmsnigeria.com/api) describes the v2 bearer-token SMS endpoint and the sandbox. Do not paste the token into chat, source control, or browser settings.
+3. Set these server-only environment variables in the Vercel project for Production: `BULKSMS_API_TOKEN` (the secret), `BULKSMS_SENDER_ID` (the approved identifier), `SMS_WORKER_SECRET` (a unique randomly generated secret of at least 32 characters). Redeploy so functions receive them. Do not prefix these variables with `VITE_`.
+4. Configure a trustworthy external scheduler with **one-minute interval**, method **POST**, URL `https://gamyc.vercel.app/api/v1/sms/worker`, and header `Authorization: Bearer <SMS_WORKER_SECRET>`. Do not include the secret in the URL. A scheduler capable of custom headers (such as cron-job.org) works; Vercel Hobby cron does not reliably satisfy one-minute scheduling. Expect up to roughly a minute of delay, plus scheduler and provider latency. The worker processes one due message per invocation due to the 30-second Vercel function limit (about 60/hour); monitor backlog if enrollment volume increases. Verify an unauthorized call returns 401; a configured, disabled worker returns `{ "processed": 0 }`.
+5. An admin opens **First-Timers → First-timer welcome SMS**, reviews the template and queue, chooses Manual / Automatic after enrollment / Automatic at selected daily time, and enables sending only after confirming provider/scheduler setup. Daily time is in `Africa/Lagos` (WAT, UTC+1); enrollments after or exactly at the set time queue for the next day. Messages without a phone number are not queued.
+
+Manual is the default: entries are held for admin review and require **Send now** (which makes a single provider request). While live SMS is disabled, entries are also held even if automatic mode is selected, so enabling cannot unexpectedly blast an old backlog. Automatic immediate mode queues in the same registration transaction then attempts delivery **after commit**; the worker picks up pending immediate jobs if that attempt did not run. Automatic daily mode queues a fixed send time and the worker delivers it when due. Changing the template or mode affects future enrollments, not messages already queued. When switching to manual, the worker pauses pending automatic welcome jobs; previously held entries stay held until explicitly sent.
+
+Provider acceptance is **not proof of handset delivery**. Inspect BulkSMSNigeria's dashboard and credit balance. A timeout or interrupted worker leaves a message `UNCERTAIN` for manual investigation and is **never automatically retried** (to avoid duplicate paid messages). Provider-rejected messages are `FAILED`. Do not resend uncertain messages before confirming the provider's delivery records. Keep the worker secret private and rotate it if exposed.
+
+## Follow-on workflows
+
+The outbox schema reserves `EVENT` and `CHECKIN_CODE` kinds for future Sunday/event campaigns and code delivery. This change does **not** add campaign creation or send check-in codes. Implement those as separate admin-authorized workflows with recipient selection, confirmation, limits, and deduplication before use.

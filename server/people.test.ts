@@ -142,6 +142,22 @@ it('stores new registration fields and one active department in the same transac
   expect(statements.at(-1)?.sql).toBe('COMMIT')
 })
 
+it('queues a first-timer welcome in the registration transaction when a phone is provided', async () => {
+  const statements: { sql: string; params?: unknown[] }[] = []
+  const client = { query: async (sql: string, params?: unknown[]) => {
+    statements.push({ sql, params })
+    if (sql.includes('FROM compounds WHERE normalized_name')) return { rows: [{ id: 'compound', region: 'ACROSS', is_active: true }] }
+    if (sql.includes('INSERT INTO people')) return { rows: [{ id: 'new-person' }] }
+    if (sql.includes('FROM sms_settings')) return { rows: [{ enabled: false, welcome_mode: 'MANUAL', daily_time: '18:00', welcome_template: 'Hello {firstName}' }] }
+    return { rows: [] }
+  }, release: () => {} }
+  const db = { query: async () => ({ rows: [] }), connect: async () => client }
+  await registerPerson(db as never, { ...baseDetails, phone: '+2348031234567' }, 'staff')
+  const queued = statements.find(({ sql }) => sql.includes('INSERT INTO sms_outbox'))
+  expect(queued?.params).toEqual(['new-person', '2348031234567', 'Hello Ada', 'HELD', null])
+  expect(statements.at(-1)?.sql).toBe('COMMIT')
+})
+
 it('checks the optional active cell and saves membership atomically with registration', async () => {
   const queries: { sql: string; params?: unknown[] }[] = []
   const cellId = '33333333-3333-4333-8333-333333333333'

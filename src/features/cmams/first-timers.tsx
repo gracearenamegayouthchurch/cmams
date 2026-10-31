@@ -16,7 +16,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react'
-import { api } from '@/lib/cmams-api'
+import { api, getSession } from '@/lib/cmams-api'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -63,6 +63,7 @@ import {
   type Service,
 } from './types'
 import { useDebouncedValue } from './use-debounced-value'
+import { WelcomeSmsPanel } from './welcome-sms'
 
 const statusFilters = [
   { value: 'all', label: 'All' },
@@ -159,7 +160,8 @@ function exportFirstTimersCsv(people: FirstTimerPerson[]) {
       .map(escapeCsv)
       .join(',')
   )
-  const csv = '\uFEFF' + [headers.map(escapeCsv).join(','), ...rows].join('\r\n')
+  const csv =
+    '\uFEFF' + [headers.map(escapeCsv).join(','), ...rows].join('\r\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -175,8 +177,13 @@ export function FirstTimersPage() {
   const [filter, setFilter] = useState<string>('all')
   const [serviceId, setServiceId] = useState<string>('all')
   const [page, setPage] = useState(1)
-  const [selectedPerson, setSelectedPerson] =
-    useState<FirstTimerPerson | null>(null)
+  const [selectedPerson, setSelectedPerson] = useState<FirstTimerPerson | null>(
+    null
+  )
+  const session = useQuery({
+    queryKey: ['session', 'first-timers'],
+    queryFn: getSession,
+  })
 
   const services = useQuery({
     queryKey: ['services'],
@@ -241,6 +248,7 @@ export function FirstTimersPage() {
       }
     >
       <div className='space-y-6'>
+        {session.data?.staff.role === 'ADMIN' && <WelcomeSmsPanel />}
         {summary && (
           <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
             <div className='flex flex-col justify-between gap-2 rounded-xl border bg-card p-4'>
@@ -462,7 +470,10 @@ export function FirstTimersPage() {
               <TableBody>
                 {people.map((person) => {
                   const isSelected = selectedPerson?.id === person.id
-                  const visits = Math.max(0, Number(person.attendance_count ?? 0))
+                  const visits = Math.max(
+                    0,
+                    Number(person.attendance_count ?? 0)
+                  )
                   const promoted = person.lifecycle_stage !== 'FIRST_TIMER'
                   return (
                     <TableRow
@@ -560,7 +571,9 @@ export function FirstTimersPage() {
                           <div className='flex items-center gap-2'>
                             <Badge
                               variant='outline'
-                              className={stageBadgeClass(person.lifecycle_stage)}
+                              className={stageBadgeClass(
+                                person.lifecycle_stage
+                              )}
                             >
                               {formatStage(person.lifecycle_stage)}
                             </Badge>

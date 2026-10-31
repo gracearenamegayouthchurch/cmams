@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type pg from 'pg'
 import { maskPhone, type StaffRole } from './rbac.js'
+import { queueWelcome } from './sms.js'
 import {
   compoundRegion,
   normalizeCompoundName,
@@ -211,6 +212,7 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
       VALUES($1,'FIRST_TIMER',$2,'Registered at front desk')`,
       [person.id, staffId]
     )
+    await queueWelcome(client, person.id, data.phone, data.firstName)
     await client.query('COMMIT')
     return person
   } catch (error) {

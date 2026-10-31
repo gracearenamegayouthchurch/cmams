@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { timingSafeEqual } from 'node:crypto'
 import { getDb } from './db.js'
 import {
   readSession,
@@ -50,6 +51,8 @@ import {
   dashboardTrend,
 } from './reports.js'
 import { analyticsReport } from './analytics.js'
+import { getSmsSettings, listWelcomeMessages, processSmsOutbox, sendImmediateWelcome, sendManualWelcome, SmsError, updateSmsSettings } from './sms.js'
+import { sendBulkSms, smsConfigured } from './sms-provider.js'
 
 const loginFields = z.object({
   email: z.email(),
@@ -112,7 +115,7 @@ export async function handleApi(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const path = url.pathname
   const method = request.method.toUpperCase()
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && path !== '/api/v1/sms/worker') {
     const origin = request.headers.get('origin')
     if (!origin || origin !== url.origin)
       return json({ error: 'Request origin is not permitted' }, 403)
@@ -120,6 +123,14 @@ export async function handleApi(request: Request): Promise<Response> {
       return json({ error: 'Expected JSON request' }, 415)
   }
   try {
+    if (path === '/api/v1/sms/worker' && method === 'POST') {
+      const secret = process.env.SMS_WORKER_SECRET
+      const supplied = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? ''
+      if (!secret || secret.length < 32 || supplied.length !== secret.length || !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)))
+        return json({ error: 'Authentication required' }, 401)
+      if (!smsConfigured() && (await getSmsSettings(getDb())).enabled) return json({ error: 'Provider not configured' }, 503)
+      return json(await processSmsOutbox(getDb(), sendBulkSms))
+    }
     if (method === 'POST' && path === '/api/v1/login') {
       const body = loginFields.parse(await request.json())
       const result = await getDb().query(
@@ -200,6 +211,26 @@ export async function handleApi(request: Request): Promise<Response> {
       return json({ ok: true }, 200, { 'set-cookie': `${cookieName}=${token}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=28800` })
     }
     if (staff.must_change_password) return json({ error: 'Change your temporary password to continue', code: 'PASSWORD_CHANGE_REQUIRED' }, 403)
+    if (path.startsWith('/api/v1/sms/')) {
+      if (staff.role !== 'ADMIN') return json({ error: 'Action not permitted' }, 403)
+      if (path === '/api/v1/sms/settings' && method === 'GET')
+        return json({ settings: await getSmsSettings(getDb()), providerConfigured: smsConfigured(), schedulerConfigured: !!process.env.SMS_WORKER_SECRET })
+      if (path === '/api/v1/sms/settings' && method === 'PATCH')
+      {
+        const input = await request.json() as { enabled?: boolean }
+        if (input.enabled && (!smsConfigured() || !process.env.SMS_WORKER_SECRET))
+          return json({ error: 'Configure provider and worker secret before enabling SMS' }, 409)
+        return json({ settings: await updateSmsSettings(getDb(), input, staff.id) })
+      }
+      if (path === '/api/v1/sms/welcome' && method === 'GET')
+        return json({ messages: await listWelcomeMessages(getDb()) })
+      const sendMatch = path.match(/^\/api\/v1\/sms\/welcome\/([0-9a-f-]{36})\/send$/i)
+      if (sendMatch && method === 'POST') {
+        if (!smsConfigured()) return json({ error: 'Provider not configured' }, 503)
+        return json({ status: await sendManualWelcome(getDb(), sendMatch[1], sendBulkSms) })
+      }
+      return json({ error: 'Not found' }, 404)
+    }
     if (path === '/api/v1/profile' && method === 'GET') {
       const catalogs = await listActiveCatalogs(getDb())
       let person: Record<string, unknown> | null = null
@@ -760,13 +791,17 @@ export async function handleApi(request: Request): Promise<Response> {
         matches: await findDuplicates(getDb(), input.fullName, input.phone ?? null, input.email ?? null),
       })
     }
-    if (path === '/api/v1/people' && method === 'POST')
-      return json(
-        { person: await registerPerson(getDb(), await request.json(), staff.id) },
-        201
-      )
+    if (path === '/api/v1/people' && method === 'POST') {
+      const person = await registerPerson(getDb(), await request.json(), staff.id)
+      if (smsConfigured()) {
+        // Registration already committed; delivery failures must not turn it into an apparent failed enrollment.
+        try { await sendImmediateWelcome(getDb(), person.id, sendBulkSms) } catch { /* worker can claim pending jobs */ }
+      }
+      return json({ person }, 201)
+    }
     return json({ error: 'Endpoint not implemented' }, 501)
   } catch (error) {
+    if (error instanceof SmsError) return json({ error: error.message }, error.status)
     if (error instanceof CellAccessError) return json({ error: error.message }, 403)
     if (error instanceof CellMeetingError) return json({ error: error.message }, error.status)
     if (error instanceof CompoundRegionConflict)

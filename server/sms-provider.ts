@@ -1,0 +1,26 @@
+import { SmsError } from './sms.js'
+
+type Fetcher = typeof fetch
+export function smsConfigured() {
+  return !!(process.env.BULKSMS_API_TOKEN && process.env.BULKSMS_SENDER_ID)
+}
+
+export async function sendBulkSms(to: string, body: string, fetcher: Fetcher = fetch): Promise<{ id?: string }> {
+  const token = process.env.BULKSMS_API_TOKEN
+  const from = process.env.BULKSMS_SENDER_ID
+  if (!token || !from) throw new SmsError('BulkSMSNigeria is not configured', 503)
+  if (!/^[1-9]\d{7,14}$/.test(to) || !body.trim() || body.length > 1530) throw new SmsError('Invalid message', 422)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+  try {
+    const response = await fetcher('https://www.bulksmsnigeria.com/api/v2/sms', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ from, to, body }),
+      signal: controller.signal,
+    })
+    const result = await response.json() as { status?: string; code?: string; data?: { message_id?: string } }
+    if (!response.ok || result.status !== 'success') throw new SmsError('Provider rejected message', [400, 409, 422].includes(response.status) ? 422 : 503)
+    return { id: result.data?.message_id }
+  } finally { clearTimeout(timeout) }
+}

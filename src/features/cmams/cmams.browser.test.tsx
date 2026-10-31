@@ -24,11 +24,61 @@ import { QueryState } from './query-state'
 import { ScanPage } from './scan'
 import { ServicesPage } from './services'
 import { StaffPage } from './staff'
+import { WelcomeSmsPanel } from './welcome-sms'
 
 afterEach(async () => {
   await cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+it('lets an admin edit welcome message mode and time while SMS stays off by default', async () => {
+  const saved: unknown[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path === '/api/v1/sms/settings' && init?.method === 'PATCH') {
+        saved.push(JSON.parse(String(init.body)))
+        return Response.json({
+          settings: {
+            enabled: false,
+            welcome_mode: 'DAILY',
+            daily_time: '18:00',
+            welcome_template: 'Hello {firstName}',
+          },
+        })
+      }
+      if (path === '/api/v1/sms/settings')
+        return Response.json({
+          settings: {
+            enabled: false,
+            welcome_mode: 'MANUAL',
+            daily_time: '18:00',
+            welcome_template: 'Hello {firstName}',
+          },
+          providerConfigured: false,
+          schedulerConfigured: false,
+        })
+      if (path === '/api/v1/sms/welcome') return Response.json({ messages: [] })
+      return Response.json({ error: 'Unexpected' }, { status: 404 })
+    })
+  )
+  const screen = await renderWithShell(<WelcomeSmsPanel />)
+  await expect.element(screen.getByText(/Live SMS is off/i)).toBeVisible()
+  await expect
+    .element(screen.getByLabelText('Welcome text'))
+    .toHaveValue('Hello {firstName}')
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Save SMS settings' })
+  )
+  await expect.element(screen.getByText('SMS settings saved.')).toBeVisible()
+  expect(saved).toHaveLength(1)
+  expect(saved[0]).toMatchObject({
+    enabled: false,
+    welcomeMode: 'MANUAL',
+    dailyTime: '18:00',
+  })
 })
 
 function renderWithShell(element: React.ReactNode) {

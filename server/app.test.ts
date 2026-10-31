@@ -12,6 +12,34 @@ afterEach(() => {
 })
 
 describe('API boundary', () => {
+  it('restricts SMS settings to admins and protects worker with a separate secret', async () => {
+    process.env.SESSION_SECRET = secret
+    process.env.SMS_WORKER_SECRET = 'test-worker-secret-1234567890123456'
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
+      ? [{ id: 'staff', full_name: 'Desk', role: 'REGISTRATION_DESK', session_version: 0 }]
+      : [{ enabled: false, welcome_mode: 'MANUAL', daily_time: '18:00', welcome_template: 'Hi {firstName}' }] }))
+    const cookie = `cmams_session=${signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)}`
+    expect((await handleApi(new Request('https://church.example/api/v1/sms/settings', { headers: { cookie } }))).status).toBe(403)
+    expect((await handleApi(new Request('https://church.example/api/v1/sms/worker', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }))).status).toBe(401)
+    expect((await handleApi(new Request('https://church.example/api/v1/sms/worker', { method: 'POST', headers: { authorization: 'Bearer test-worker-secret-1234567890123456', 'content-type': 'application/json' }, body: '{}' }))).status).toBe(200)
+    delete process.env.SMS_WORKER_SECRET
+  })
+  it('rejects enabling live SMS when provider credentials or worker secret are absent', async () => {
+    process.env.SESSION_SECRET = secret
+    delete process.env.BULKSMS_API_TOKEN
+    delete process.env.BULKSMS_SENDER_ID
+    delete process.env.SMS_WORKER_SECRET
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
+      ? [{ id: 'staff', full_name: 'Admin', role: 'ADMIN', session_version: 0 }]
+      : [] }))
+    const token = signSession({ id: 'staff', role: 'ADMIN' }, secret)
+    const result = await handleApi(new Request('https://church.example/api/v1/sms/settings', {
+      method: 'PATCH', headers: { cookie: `cmams_session=${token}`, origin: 'https://church.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true, welcomeMode: 'IMMEDIATE', dailyTime: '18:00', welcomeTemplate: 'Welcome!' }),
+    }))
+    expect(result.status).toBe(409)
+    expect(mocked.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE sms_settings'))).toBe(false)
+  })
   it('lets an assigned leader update their cell location but not its name', async () => {
     process.env.SESSION_SECRET = secret
     const cellId = '11111111-1111-4111-8111-111111111111'
