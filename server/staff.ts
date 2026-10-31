@@ -58,7 +58,7 @@ export async function createStaff(db: Db, input: unknown, actorId: string) {
     const staff = created.rows[0]
     await client.query(
       `INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id,new_state)
-       VALUES($1,'STAFF_CREATED','staff',$2,jsonb_build_object('role',$3))`,
+        VALUES($1,'STAFF_CREATED','staff',$2,jsonb_build_object('role',$3::text))`,
       [actorId, staff.id, data.role]
     )
     await client.query('COMMIT')
@@ -89,7 +89,7 @@ export async function updateStaff(db: Db, id: string, input: unknown, actorId: s
     const updated = await client.query(`UPDATE staff_users SET role=$2,is_active=$3,session_version=session_version+1
       WHERE id=$1 RETURNING id,email,full_name,role,is_active,created_at,last_login_at,must_change_password,must_complete_profile,person_id`, [id, nextRole, nextActive])
     await client.query(`INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id,previous_state,new_state)
-      VALUES($1,'STAFF_UPDATED','staff',$2,jsonb_build_object('role',$3,'active',$4),jsonb_build_object('role',$5,'active',$6))`,
+       VALUES($1,'STAFF_UPDATED','staff',$2,jsonb_build_object('role',$3::text,'active',$4::boolean),jsonb_build_object('role',$5::text,'active',$6::boolean))`,
       [actorId, id, existing.role, existing.is_active, nextRole, nextActive])
     await client.query('COMMIT')
     return updated.rows[0]

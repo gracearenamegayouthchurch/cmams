@@ -20,7 +20,24 @@ it('creates a staff account with a random one-time password and an audit record,
   expect(result.staff).not.toHaveProperty('password_hash')
   expect(await verifyPassword(result.temporaryPassword, storedHash)).toBe(true)
   expect(calls.some((call) => call.sql.includes('INSERT INTO audit_logs'))).toBe(true)
+  expect(calls.find((call) => call.sql.includes('STAFF_CREATED'))?.sql).toContain("jsonb_build_object('role',$3::text)")
   expect(calls.filter((call) => call.sql.includes('audit_logs')).flatMap((call) => call.args ?? [])).not.toContain(result.temporaryPassword)
+})
+
+it('types role and active-state parameters when auditing a staff update', async () => {
+  const queries: string[] = []
+  const db = { connect: async () => ({
+    query: async (sql: string) => {
+      queries.push(sql)
+      if (sql.includes('SELECT id,role,is_active')) return { rows: [{ id: 'staff', role: 'PASTOR_VIEWER', is_active: true }] }
+      if (sql.includes('UPDATE staff_users')) return { rows: [{ id: 'staff', role: 'PASTOR_VIEWER', is_active: false }] }
+      return { rows: [] }
+    }, release: () => {},
+  }) }
+  await updateStaff(db as never, 'staff', { isActive: false }, 'admin')
+  const audit = queries.find((sql) => sql.includes('STAFF_UPDATED'))
+  expect(audit).toContain("jsonb_build_object('role',$3::text,'active',$4::boolean)")
+  expect(audit).toContain("jsonb_build_object('role',$5::text,'active',$6::boolean)")
 })
 
 it('rolls back duplicate staff email errors', async () => {
