@@ -19,6 +19,11 @@ const baseDetails = {
   consent: true,
 }
 
+it('normalizes a Nigerian phone entered with a leading zero after the country code', () => {
+  const result = validateRegistration({ ...baseDetails, phone: '+23408031234567' })
+  expect(result.phone).toBe('+2348031234567')
+})
+
 it('checks swapped first and last names when looking for duplicates', () => {
   expect(reversedName('Chinedu Okafor')).toBe('Okafor Chinedu')
 })

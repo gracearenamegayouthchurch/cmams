@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type pg from 'pg'
+import { normalizePhone } from './phone.js'
 
 type Db = Pick<pg.Pool, 'query'>
 type SmsClient = Pick<pg.PoolClient, 'query'>
@@ -58,17 +59,19 @@ export async function updateSmsSettings(db: Db, input: unknown, actor: string) {
 
 export async function queueWelcome(client: SmsClient, personId: string, phone: string | null, firstName: string) {
   if (!phone) return
+  const recipient = normalizePhone(phone)
+  if (!/^\+[1-9]\d{7,14}$/.test(recipient)) return
   const settings = await getSmsSettings(client)
   const held = !settings.enabled || settings.welcome_mode === 'MANUAL'
   const due = settings.welcome_mode === 'DAILY' ? nextWelcomeTime(new Date(), settings.daily_time) : new Date()
   await client.query(`INSERT INTO sms_outbox(kind,person_id,recipient,body,status,due_at)
     VALUES('WELCOME',$1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-  [personId, phone.replace(/^\+/, ''), renderWelcome(settings.welcome_template, firstName), held ? 'HELD' : 'PENDING', held ? null : due])
+  [personId, recipient.slice(1), renderWelcome(settings.welcome_template, firstName), held ? 'HELD' : 'PENDING', held ? null : due])
 }
 
 export async function listWelcomeMessages(db: Db) {
   const result = await db.query(`SELECT o.id,o.person_id,p.first_name,p.last_name,o.recipient,o.body,o.status,
-    o.delivery_state,o.delivery_checked_at,o.due_at,o.created_at,o.failure_reason,o.provider_id,
+    o.delivery_state,o.provider_status,o.delivery_checked_at,o.due_at,o.created_at,o.failure_reason,o.provider_id,
     COALESCE((SELECT json_agg(json_build_object('outcome',a.outcome,'attempted_at',a.attempted_at,'failure_reason',a.failure_reason)
       ORDER BY a.attempted_at DESC) FROM sms_attempts a WHERE a.outbox_id=o.id),'[]'::json) AS attempts
     FROM sms_outbox o JOIN people p ON p.id=o.person_id
@@ -146,11 +149,16 @@ export async function refreshDelivery(db: Db, id: string, lookup: (providerId: s
   if (!found.rows[0]) throw new SmsError('Message not found', 404)
   const providerId = found.rows[0].provider_id as string | null
   if (!providerId) throw new SmsError('No provider message to check yet', 409)
-  const state = deliveryState(await lookup(providerId))
+  const providerStatus = (await lookup(providerId)).trim() || 'unknown'
+  const state = deliveryState(providerStatus)
   const updated = await db.query(`UPDATE sms_outbox SET
     delivery_state=CASE WHEN delivery_state='DELIVERED' THEN 'DELIVERED' ELSE $2 END,
-    delivery_checked_at=now() WHERE id=$1 RETURNING delivery_state`, [jobId, state])
-  return updated.rows[0].delivery_state as DeliveryState
+    provider_status=$3,
+    delivery_checked_at=now() WHERE id=$1 RETURNING delivery_state,provider_status`, [jobId, state, providerStatus])
+  return {
+    deliveryState: updated.rows[0].delivery_state as DeliveryState,
+    providerStatus: updated.rows[0].provider_status as string,
+  }
 }
 
 export async function resendWelcome(db: Db, id: string, actor: string, send: Sender) {

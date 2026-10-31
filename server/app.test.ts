@@ -68,7 +68,7 @@ describe('API boundary', () => {
         return { rows: [{ id: jobId, recipient: '2348031234567', body: 'Welcome', status: 'SENT', delivery_state: storedState, provider_id: 'old' }] }
       if (sql.startsWith('UPDATE sms_outbox') && sql.includes('RETURNING delivery_state')) {
         storedState = String(params?.[1])
-        return { rows: [{ delivery_state: storedState }] }
+        return { rows: [{ delivery_state: storedState, provider_status: params?.[2] }] }
       }
       if (sql.startsWith('UPDATE sms_outbox') && sql.includes('RETURNING id,recipient,body'))
         return { rows: [{ id: jobId, recipient: '2348031234567', body: 'Welcome' }] }
@@ -78,13 +78,13 @@ describe('API boundary', () => {
     const headers = { cookie: `cmams_session=${token}`, origin: 'https://church.example', 'content-type': 'application/json' }
     const refresh = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/refresh`, { method: 'POST', headers, body: '{}' }))
     expect(refresh.status).toBe(200)
-    expect(await refresh.json()).toEqual({ deliveryState: 'PENDING' })
+    expect(await refresh.json()).toEqual({ deliveryState: 'PENDING', providerStatus: 'sent awaiting status' })
     const denied = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/resend`, { method: 'POST', headers, body: '{}' }))
     expect(denied.status).toBe(409)
     expect(fetcher).toHaveBeenCalledTimes(1)
     providerStatus = 'undeliv'
     const failed = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/refresh`, { method: 'POST', headers, body: '{}' }))
-    expect(await failed.json()).toEqual({ deliveryState: 'FAILED' })
+    expect(await failed.json()).toEqual({ deliveryState: 'FAILED', providerStatus: 'undeliv' })
     const resent = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/resend`, { method: 'POST', headers, body: '{}' }))
     expect(resent.status).toBe(200)
     expect(await resent.json()).toEqual({ status: 'SENT' })
@@ -328,7 +328,7 @@ describe('API boundary', () => {
       compoundName: 'East Gate', birthMonth: 10, birthDay: 12, consent: true,
     }
     for (const [invalid, field] of [
-      [{ phone: '08031234567' }, 'phone'],
+      [{ phone: 'not-a-phone' }, 'phone'],
       [{ email: 'not-an-email' }, 'email'],
       [{ birthMonth: 2, birthDay: 30 }, 'birth day'],
       [{ departmentId: 'Choir' }, 'department'],

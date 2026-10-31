@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { deliveryState, resendWelcome } from './sms.js'
+import { deliveryState, refreshDelivery, resendWelcome } from './sms.js'
 
 it('maps only explicit provider success to delivered and known failures to failed', () => {
   expect(deliveryState('delivrd')).toBe('DELIVERED')
@@ -9,6 +9,16 @@ it('maps only explicit provider success to delivered and known failures to faile
   expect(deliveryState('expired')).toBe('FAILED')
   expect(deliveryState('sent awaiting status')).toBe('PENDING')
   expect(deliveryState('queued')).toBe('PENDING')
+})
+
+it('returns the raw provider status with the mapped delivery state', async () => {
+  const db = { query: async (sql: string) => {
+    if (sql.includes('SELECT provider_id')) return { rows: [{ provider_id: 'provider-1' }] }
+    if (sql.includes('RETURNING delivery_state,provider_status')) return { rows: [{ delivery_state: 'FAILED', provider_status: 'undeliv' }] }
+    return { rows: [] }
+  } }
+  await expect(refreshDelivery(db as never, '11111111-1111-4111-8111-111111111111', async () => 'undeliv'))
+    .resolves.toEqual({ deliveryState: 'FAILED', providerStatus: 'undeliv' })
 })
 
 it('refuses resend unless the latest attempt is confirmed failed', async () => {

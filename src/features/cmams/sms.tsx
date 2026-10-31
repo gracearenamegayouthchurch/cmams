@@ -29,6 +29,7 @@ type Message = {
   body: string
   status: string
   delivery_state: DeliveryState
+  provider_status: string | null
   delivery_checked_at: string | null
   due_at: string | null
   failure_reason: string | null
@@ -144,11 +145,13 @@ export function SmsPage() {
     setBusy(true)
     setNotice('')
     try {
-      const result = await api<{ deliveryState: DeliveryState }>(
-        `/api/v1/sms/welcome/${id}/refresh`,
-        { method: 'POST', body: '{}' }
+      const result = await api<{
+        deliveryState: DeliveryState
+        providerStatus: string
+      }>(`/api/v1/sms/welcome/${id}/refresh`, { method: 'POST', body: '{}' })
+      setNotice(
+        `Delivery status: ${deliveryLabel(result.deliveryState)}. Provider report: ${result.providerStatus}.`
       )
-      setNotice(`Delivery status: ${deliveryLabel(result.deliveryState)}.`)
       await client.invalidateQueries({ queryKey: ['sms-welcome'] })
     } catch (error) {
       setNotice(
@@ -372,6 +375,11 @@ export function SmsPage() {
                             ` · Last: ${lastAttempt.outcome} on ${lagosDateTime(lastAttempt.attempted_at)}`}
                           {lastAttempt?.failure_reason &&
                             ` · ${lastAttempt.failure_reason}`}
+                        </p>
+                      )}
+                      {message.provider_status && (
+                        <p className='text-xs text-muted-foreground'>
+                          Provider report: {message.provider_status}
                         </p>
                       )}
                       {message.delivery_checked_at && (

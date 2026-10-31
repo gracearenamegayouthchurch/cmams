@@ -53,6 +53,7 @@ import {
 import { analyticsReport } from './analytics.js'
 import { getSmsSettings, listWelcomeMessages, processSmsOutbox, refreshDelivery, resendWelcome, sendImmediateWelcome, sendManualWelcome, SmsError, updateSmsSettings } from './sms.js'
 import { fetchDeliveryStatus, sendBulkSms, smsConfigured } from './sms-provider.js'
+import { normalizePhone } from './phone.js'
 
 const loginFields = z.object({
   email: z.email(),
@@ -232,7 +233,7 @@ export async function handleApi(request: Request): Promise<Response> {
       const refreshMatch = path.match(/^\/api\/v1\/sms\/welcome\/([0-9a-f-]{36})\/refresh$/i)
       if (refreshMatch && method === 'POST') {
         if (!smsConfigured()) return json({ error: 'Provider not configured' }, 503)
-        return json({ deliveryState: await refreshDelivery(getDb(), refreshMatch[1], fetchDeliveryStatus) })
+        return json(await refreshDelivery(getDb(), refreshMatch[1], fetchDeliveryStatus))
       }
       const resendMatch = path.match(/^\/api\/v1\/sms\/welcome\/([0-9a-f-]{36})\/resend$/i)
       if (resendMatch && method === 'POST') {
@@ -293,11 +294,10 @@ export async function handleApi(request: Request): Promise<Response> {
 
       let formattedPhone: string | null = null
       if (profileBody.phone) {
-        const cleaned = profileBody.phone.replace(/[\s\-()]/g, '')
-        if (cleaned.startsWith('+')) formattedPhone = cleaned
-        else if (cleaned.startsWith('0') && cleaned.length === 11) formattedPhone = `+234${cleaned.slice(1)}`
-        else if (cleaned.startsWith('234')) formattedPhone = `+${cleaned}`
-        else formattedPhone = cleaned ? `+${cleaned}` : null
+        const normalized = normalizePhone(profileBody.phone)
+        if (!/^\+[1-9]\d{7,14}$/.test(normalized))
+          return json({ error: 'Enter a valid phone number with country code' }, 400)
+        formattedPhone = normalized
       }
 
       const client = await getDb().connect()

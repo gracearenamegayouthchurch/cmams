@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type pg from 'pg'
 import { maskPhone, type StaffRole } from './rbac.js'
 import { queueWelcome } from './sms.js'
+import { normalizePhone } from './phone.js'
 import {
   compoundRegion,
   normalizeCompoundName,
@@ -29,7 +30,13 @@ const registration = z.object({
   birthDay: z.number().int().min(1).max(31),
   birthYear: z.number().int().min(1900).max(new Date().getFullYear()).optional(),
   phone: z
-    .union([z.string().regex(/^\+[1-9]\d{7,14}$/), z.null()])
+    .union([
+      z
+        .string()
+        .transform((value) => normalizePhone(value))
+        .pipe(z.string().regex(/^\+[1-9]\d{7,14}$/)),
+      z.null(),
+    ])
     .optional(),
   householdId: z.uuid().optional(),
   consent: z.literal(true),

@@ -24,6 +24,17 @@ it('records one held welcome with normalized number; never sends during enrollme
   expect(queries[1].params).toEqual(['person-id', '2348031234567', 'Welcome Ada', 'HELD', null])
 })
 
+it('repairs a Nigerian number with a leading zero before queueing the SMS', async () => {
+  let queued: unknown[] | undefined
+  const client = { query: async (sql: string, params?: unknown[]) => {
+    if (sql.includes('FROM sms_settings')) return { rows: [settings] }
+    if (sql.includes('INSERT INTO sms_outbox')) queued = params
+    return { rows: [] }
+  } }
+  await queueWelcome(client as never, 'person-id', '+23408031234567', 'Ada')
+  expect(queued?.[1]).toBe('2348031234567')
+})
+
 it('holds auto-mode enrollments while sending is disabled instead of creating a surprise backlog', async () => {
   let queued: unknown[] | undefined
   const client = { query: async (sql: string, params?: unknown[]) => {
