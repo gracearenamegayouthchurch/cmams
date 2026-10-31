@@ -34,3 +34,4 @@ dist-ssr
 .vitest-attachments/
 .vercel
 .env
+.env*
