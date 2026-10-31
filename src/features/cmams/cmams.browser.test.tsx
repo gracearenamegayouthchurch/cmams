@@ -23,8 +23,8 @@ import { LoginPage } from './login'
 import { QueryState } from './query-state'
 import { ScanPage } from './scan'
 import { ServicesPage } from './services'
+import { SmsPage } from './sms'
 import { StaffPage } from './staff'
-import { WelcomeSmsPanel } from './welcome-sms'
 
 afterEach(async () => {
   await cleanup()
@@ -64,7 +64,7 @@ it('lets an admin edit welcome message mode and time while SMS stays off by defa
       return Response.json({ error: 'Unexpected' }, { status: 404 })
     })
   )
-  const screen = await renderWithShell(<WelcomeSmsPanel />)
+  const screen = await renderWithShell(<SmsPage />)
   await expect.element(screen.getByText(/Live SMS is off/i)).toBeVisible()
   await expect
     .element(screen.getByLabelText('Welcome text'))
@@ -79,6 +79,103 @@ it('lets an admin edit welcome message mode and time while SMS stays off by defa
     welcomeMode: 'MANUAL',
     dailyTime: '18:00',
   })
+})
+
+it('shows delivery status and only offers resend after a confirmed failure', async () => {
+  const resends: string[] = []
+  let messages = [
+    {
+      id: '11111111-1111-4111-8111-111111111111',
+      first_name: 'Ada',
+      last_name: 'Okafor',
+      recipient: '2348031234567',
+      body: 'Welcome Ada',
+      status: 'SENT',
+      delivery_state: 'PENDING',
+      delivery_checked_at: null,
+      due_at: null,
+      failure_reason: null,
+      provider_id: 'provider-ada',
+      attempts: [],
+    },
+    {
+      id: '22222222-2222-4222-8222-222222222222',
+      first_name: 'Bola',
+      last_name: 'Ade',
+      recipient: '2348037654321',
+      body: 'Welcome Bola',
+      status: 'SENT',
+      delivery_state: 'FAILED',
+      delivery_checked_at: null,
+      due_at: null,
+      failure_reason: null,
+      provider_id: 'provider-bola',
+      attempts: [
+        {
+          outcome: 'SENT',
+          attempted_at: '2026-10-31T11:00:00Z',
+          failure_reason: null,
+        },
+        {
+          outcome: 'FAILED',
+          attempted_at: '2026-10-31T11:05:00Z',
+          failure_reason: 'Provider rejected message',
+        },
+      ],
+    },
+  ]
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path === '/api/v1/sms/settings')
+        return Response.json({
+          settings: {
+            enabled: true,
+            welcome_mode: 'MANUAL',
+            daily_time: '18:00',
+            welcome_template: 'Hello {firstName}',
+          },
+          providerConfigured: true,
+          schedulerConfigured: true,
+        })
+      if (path === '/api/v1/sms/welcome') return Response.json({ messages })
+      if (path.endsWith('/refresh')) {
+        messages = messages.map((message) =>
+          message.id.startsWith('1111')
+            ? { ...message, delivery_state: 'DELIVERED' }
+            : message
+        )
+        return Response.json({ deliveryState: 'DELIVERED' })
+      }
+      if (path.endsWith('/resend') && init?.method === 'POST') {
+        resends.push(path)
+        return Response.json({ status: 'SENT' })
+      }
+      return Response.json({ error: 'Unexpected' }, { status: 404 })
+    })
+  )
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  const screen = await renderWithShell(<SmsPage />)
+  await expect.element(screen.getByText('Failed')).toBeVisible()
+  await expect
+    .element(screen.getByRole('button', { name: /Resend SMS to Bola/ }))
+    .toBeVisible()
+  await userEvent.click(
+    screen.getByRole('button', { name: /Refresh delivery status for Ada/ })
+  )
+  await expect
+    .element(screen.getByText('Delivered', { exact: true }))
+    .toBeVisible()
+  await userEvent.click(
+    screen.getByRole('button', { name: /Resend SMS to Bola/ })
+  )
+  await expect
+    .element(screen.getByText('Resend accepted by provider.'))
+    .toBeVisible()
+  expect(resends).toEqual([
+    '/api/v1/sms/welcome/22222222-2222-4222-8222-222222222222/resend',
+  ])
 })
 
 function renderWithShell(element: React.ReactNode) {

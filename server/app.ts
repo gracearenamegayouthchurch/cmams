@@ -51,8 +51,8 @@ import {
   dashboardTrend,
 } from './reports.js'
 import { analyticsReport } from './analytics.js'
-import { getSmsSettings, listWelcomeMessages, processSmsOutbox, sendImmediateWelcome, sendManualWelcome, SmsError, updateSmsSettings } from './sms.js'
-import { sendBulkSms, smsConfigured } from './sms-provider.js'
+import { getSmsSettings, listWelcomeMessages, processSmsOutbox, refreshDelivery, resendWelcome, sendImmediateWelcome, sendManualWelcome, SmsError, updateSmsSettings } from './sms.js'
+import { fetchDeliveryStatus, sendBulkSms, smsConfigured } from './sms-provider.js'
 
 const loginFields = z.object({
   email: z.email(),
@@ -228,6 +228,16 @@ export async function handleApi(request: Request): Promise<Response> {
       if (sendMatch && method === 'POST') {
         if (!smsConfigured()) return json({ error: 'Provider not configured' }, 503)
         return json({ status: await sendManualWelcome(getDb(), sendMatch[1], sendBulkSms) })
+      }
+      const refreshMatch = path.match(/^\/api\/v1\/sms\/welcome\/([0-9a-f-]{36})\/refresh$/i)
+      if (refreshMatch && method === 'POST') {
+        if (!smsConfigured()) return json({ error: 'Provider not configured' }, 503)
+        return json({ deliveryState: await refreshDelivery(getDb(), refreshMatch[1], fetchDeliveryStatus) })
+      }
+      const resendMatch = path.match(/^\/api\/v1\/sms\/welcome\/([0-9a-f-]{36})\/resend$/i)
+      if (resendMatch && method === 'POST') {
+        if (!smsConfigured()) return json({ error: 'Provider not configured' }, 503)
+        return json({ status: await resendWelcome(getDb(), resendMatch[1], staff.id, sendBulkSms) })
       }
       return json({ error: 'Not found' }, 404)
     }

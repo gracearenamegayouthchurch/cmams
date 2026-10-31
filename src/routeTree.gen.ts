@@ -18,6 +18,7 @@ import { Route as errors403RouteImport } from './routes/(errors)/403'
 import { Route as errors401RouteImport } from './routes/(errors)/401'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
 import { Route as AuthenticatedStaffIndexRouteImport } from './routes/_authenticated/staff/index'
+import { Route as AuthenticatedSmsIndexRouteImport } from './routes/_authenticated/sms/index'
 import { Route as AuthenticatedServicesIndexRouteImport } from './routes/_authenticated/services/index'
 import { Route as AuthenticatedScanIndexRouteImport } from './routes/_authenticated/scan/index'
 import { Route as AuthenticatedReportsIndexRouteImport } from './routes/_authenticated/reports/index'
@@ -75,6 +76,11 @@ const authLoginRoute = authLoginRouteImport.update({
 const AuthenticatedStaffIndexRoute = AuthenticatedStaffIndexRouteImport.update({
   id: '/staff/',
   path: '/staff/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSmsIndexRoute = AuthenticatedSmsIndexRouteImport.update({
+  id: '/sms/',
+  path: '/sms/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedServicesIndexRoute =
@@ -180,6 +186,7 @@ export interface FileRoutesByFullPath {
   '/reports/': typeof AuthenticatedReportsIndexRoute
   '/scan/': typeof AuthenticatedScanIndexRoute
   '/services/': typeof AuthenticatedServicesIndexRoute
+  '/sms/': typeof AuthenticatedSmsIndexRoute
   '/staff/': typeof AuthenticatedStaffIndexRoute
 }
 export interface FileRoutesByTo {
@@ -204,6 +211,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsIndexRoute
   '/scan': typeof AuthenticatedScanIndexRoute
   '/services': typeof AuthenticatedServicesIndexRoute
+  '/sms': typeof AuthenticatedSmsIndexRoute
   '/staff': typeof AuthenticatedStaffIndexRoute
 }
 export interface FileRoutesById {
@@ -230,6 +238,7 @@ export interface FileRoutesById {
   '/_authenticated/reports/': typeof AuthenticatedReportsIndexRoute
   '/_authenticated/scan/': typeof AuthenticatedScanIndexRoute
   '/_authenticated/services/': typeof AuthenticatedServicesIndexRoute
+  '/_authenticated/sms/': typeof AuthenticatedSmsIndexRoute
   '/_authenticated/staff/': typeof AuthenticatedStaffIndexRoute
 }
 export interface FileRouteTypes {
@@ -256,6 +265,7 @@ export interface FileRouteTypes {
     | '/reports/'
     | '/scan/'
     | '/services/'
+    | '/sms/'
     | '/staff/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -280,6 +290,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/scan'
     | '/services'
+    | '/sms'
     | '/staff'
   id:
     | '__root__'
@@ -305,6 +316,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reports/'
     | '/_authenticated/scan/'
     | '/_authenticated/services/'
+    | '/_authenticated/sms/'
     | '/_authenticated/staff/'
   fileRoutesById: FileRoutesById
 }
@@ -381,6 +393,13 @@ declare module '@tanstack/react-router' {
       path: '/staff'
       fullPath: '/staff/'
       preLoaderRoute: typeof AuthenticatedStaffIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/sms/': {
+      id: '/_authenticated/sms/'
+      path: '/sms'
+      fullPath: '/sms/'
+      preLoaderRoute: typeof AuthenticatedSmsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/services/': {
@@ -500,6 +519,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedReportsIndexRoute: typeof AuthenticatedReportsIndexRoute
   AuthenticatedScanIndexRoute: typeof AuthenticatedScanIndexRoute
   AuthenticatedServicesIndexRoute: typeof AuthenticatedServicesIndexRoute
+  AuthenticatedSmsIndexRoute: typeof AuthenticatedSmsIndexRoute
   AuthenticatedStaffIndexRoute: typeof AuthenticatedStaffIndexRoute
 }
 
@@ -520,6 +540,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedReportsIndexRoute: AuthenticatedReportsIndexRoute,
   AuthenticatedScanIndexRoute: AuthenticatedScanIndexRoute,
   AuthenticatedServicesIndexRoute: AuthenticatedServicesIndexRoute,
+  AuthenticatedSmsIndexRoute: AuthenticatedSmsIndexRoute,
   AuthenticatedStaffIndexRoute: AuthenticatedStaffIndexRoute,
 }
 

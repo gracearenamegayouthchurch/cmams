@@ -26,6 +26,7 @@ const access: Record<Staff['role'], string[]> = {
     'Scan',
     'Registration',
     'First-Timers',
+    'SMS',
     'Members',
     'Services',
     'Cards',

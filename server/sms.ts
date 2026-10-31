@@ -11,8 +11,18 @@ export const smsSettingsInput = z.object({
 }).strict().refine((value) => !/\{(?!firstName\})[^{}]*\}/.test(value.welcomeTemplate), { path: ['welcomeTemplate'], message: 'Only {firstName} is supported' })
 
 export type SmsSettings = { enabled: boolean; welcome_mode: 'MANUAL' | 'IMMEDIATE' | 'DAILY'; daily_time: string; welcome_template: string }
+export type DeliveryState = 'PENDING' | 'DELIVERED' | 'FAILED'
 export class SmsError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
+}
+
+const deliveredValues = new Set(['delivrd', 'delivered', 'success'])
+const failedValues = new Set(['undeliv', 'expired', 'rejectd', 'failed', 'rejected', 'invalid'])
+export function deliveryState(status: string): DeliveryState {
+  const value = status.trim().toLowerCase()
+  if (deliveredValues.has(value)) return 'DELIVERED'
+  if (failedValues.has(value)) return 'FAILED'
+  return 'PENDING'
 }
 
 export function nextWelcomeTime(now: Date, time: string): Date {
@@ -57,24 +67,36 @@ export async function queueWelcome(client: SmsClient, personId: string, phone: s
 }
 
 export async function listWelcomeMessages(db: Db) {
-  const result = await db.query(`SELECT o.id,o.person_id,p.first_name,p.last_name,o.recipient,o.body,o.status,o.due_at,o.created_at,o.failure_reason
+  const result = await db.query(`SELECT o.id,o.person_id,p.first_name,p.last_name,o.recipient,o.body,o.status,
+    o.delivery_state,o.delivery_checked_at,o.due_at,o.created_at,o.failure_reason,o.provider_id,
+    COALESCE((SELECT json_agg(json_build_object('outcome',a.outcome,'attempted_at',a.attempted_at,'failure_reason',a.failure_reason)
+      ORDER BY a.attempted_at DESC) FROM sms_attempts a WHERE a.outbox_id=o.id),'[]'::json) AS attempts
     FROM sms_outbox o JOIN people p ON p.id=o.person_id
     WHERE o.kind='WELCOME' ORDER BY o.created_at DESC LIMIT 100`)
   return result.rows
 }
 
-type Job = { id: string; recipient: string; body: string }
+type Job = { id: string; recipient: string; body: string; provider_id?: string | null }
 type Sender = (to: string, body: string) => Promise<{ id?: string }>
 
-async function deliver(db: Db, job: Job, send: Sender) {
+async function recordAttempt(db: Db, job: Job, actor: string | null, outcome: 'SENT' | 'FAILED' | 'UNCERTAIN', providerId?: string, reason?: string) {
+  await db.query(`INSERT INTO sms_attempts(outbox_id,attempted_by_staff_id,recipient,body,provider_id,outcome,failure_reason)
+    VALUES($1,$2,$3,$4,$5,$6,$7)`, [job.id, actor, job.recipient, job.body, providerId ?? null, outcome, reason ?? null])
+}
+
+async function deliver(db: Db, job: Job, send: Sender, actor: string | null = null) {
   try {
     const result = await send(job.recipient, job.body)
-    await db.query("UPDATE sms_outbox SET status='SENT',provider_id=$2,finished_at=now() WHERE id=$1 AND status='PROCESSING'", [job.id, result.id ?? null])
+    await recordAttempt(db, job, actor, 'SENT', result.id)
+    await db.query("UPDATE sms_outbox SET status='SENT',provider_id=$2,delivery_state='PENDING',finished_at=now() WHERE id=$1 AND status='PROCESSING'", [job.id, result.id ?? null])
     return 'SENT'
   } catch (error) {
     // A timeout or transport error may mean the provider accepted the SMS: never automatically resend.
     const rejected = error instanceof SmsError && error.status === 422
-    await db.query("UPDATE sms_outbox SET status=$2,failure_reason=$3,finished_at=now() WHERE id=$1 AND status='PROCESSING'", [job.id, rejected ? 'FAILED' : 'UNCERTAIN', rejected ? 'Provider rejected message' : 'Delivery outcome unknown; review provider dashboard'])
+    const reason = rejected ? 'Provider rejected message' : 'Delivery outcome unknown; review provider dashboard'
+    await recordAttempt(db, job, actor, rejected ? 'FAILED' : 'UNCERTAIN', undefined, reason)
+    await db.query("UPDATE sms_outbox SET status=$2,failure_reason=$3,delivery_state=$4,finished_at=now() WHERE id=$1 AND status='PROCESSING'",
+      [job.id, rejected ? 'FAILED' : 'UNCERTAIN', reason, rejected ? 'FAILED' : 'PENDING'])
     return rejected ? 'FAILED' : 'UNCERTAIN'
   }
 }
@@ -116,4 +138,35 @@ export async function processSmsOutbox(db: Db, send: Sender) {
     processed++
   }
   return { processed }
+}
+
+export async function refreshDelivery(db: Db, id: string, lookup: (providerId: string) => Promise<string>) {
+  const jobId = z.uuid().parse(id)
+  const found = await db.query('SELECT provider_id FROM sms_outbox WHERE id=$1 AND kind=$2', [jobId, 'WELCOME'])
+  if (!found.rows[0]) throw new SmsError('Message not found', 404)
+  const providerId = found.rows[0].provider_id as string | null
+  if (!providerId) throw new SmsError('No provider message to check yet', 409)
+  const state = deliveryState(await lookup(providerId))
+  const updated = await db.query(`UPDATE sms_outbox SET
+    delivery_state=CASE WHEN delivery_state='DELIVERED' THEN 'DELIVERED' ELSE $2 END,
+    delivery_checked_at=now() WHERE id=$1 RETURNING delivery_state`, [jobId, state])
+  return updated.rows[0].delivery_state as DeliveryState
+}
+
+export async function resendWelcome(db: Db, id: string, actor: string, send: Sender) {
+  const jobId = z.uuid().parse(id)
+  const settings = await getSmsSettings(db)
+  if (!settings.enabled) throw new SmsError('Live SMS is disabled in admin settings', 409)
+  const found = await db.query(`SELECT id,recipient,body,status,delivery_state,provider_id FROM sms_outbox
+    WHERE id=$1 AND kind='WELCOME'`, [jobId])
+  const job = found.rows[0] as (Job & { status: string; delivery_state: DeliveryState }) | undefined
+  if (!job) throw new SmsError('Message not found', 404)
+  if (job.status !== 'SENT' || job.delivery_state !== 'FAILED')
+    throw new SmsError('Only a message confirmed as failed can be resent', 409)
+  // Claim atomically so two admins cannot both pay for the same resend.
+  const claimed = await db.query(`UPDATE sms_outbox SET status='PROCESSING',claimed_at=now(),failure_reason=NULL
+    WHERE id=$1 AND kind='WELCOME' AND status='SENT' AND delivery_state='FAILED'
+    RETURNING id,recipient,body`, [jobId])
+  if (!claimed.rows[0]) throw new SmsError('Only a message confirmed as failed can be resent', 409)
+  return deliver(db, claimed.rows[0] as Job, send, actor)
 }

@@ -16,7 +16,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react'
-import { api, getSession } from '@/lib/cmams-api'
+import { api } from '@/lib/cmams-api'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -63,7 +63,6 @@ import {
   type Service,
 } from './types'
 import { useDebouncedValue } from './use-debounced-value'
-import { WelcomeSmsPanel } from './welcome-sms'
 
 const statusFilters = [
   { value: 'all', label: 'All' },
@@ -180,10 +179,6 @@ export function FirstTimersPage() {
   const [selectedPerson, setSelectedPerson] = useState<FirstTimerPerson | null>(
     null
   )
-  const session = useQuery({
-    queryKey: ['session', 'first-timers'],
-    queryFn: getSession,
-  })
 
   const services = useQuery({
     queryKey: ['services'],
@@ -248,7 +243,6 @@ export function FirstTimersPage() {
       }
     >
       <div className='space-y-6'>
-        {session.data?.staff.role === 'ADMIN' && <WelcomeSmsPanel />}
         {summary && (
           <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
             <div className='flex flex-col justify-between gap-2 rounded-xl border bg-card p-4'>

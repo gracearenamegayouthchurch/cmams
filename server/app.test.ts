@@ -9,6 +9,10 @@ const secret = 'a'.repeat(64)
 const previousSecret = process.env.SESSION_SECRET
 afterEach(() => {
   process.env.SESSION_SECRET = previousSecret
+  delete process.env.BULKSMS_API_TOKEN
+  delete process.env.BULKSMS_SENDER_ID
+  delete process.env.SMS_WORKER_SECRET
+  vi.unstubAllGlobals()
 })
 
 describe('API boundary', () => {
@@ -39,6 +43,57 @@ describe('API boundary', () => {
     }))
     expect(result.status).toBe(409)
     expect(mocked.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE sms_settings'))).toBe(false)
+  })
+  it('refreshes delivery status and allows resend only after a confirmed failure', async () => {
+    process.env.SESSION_SECRET = secret
+    process.env.BULKSMS_API_TOKEN = 'secret-token'
+    process.env.BULKSMS_SENDER_ID = 'GAMYC'
+    const jobId = '11111111-1111-4111-8111-111111111111'
+    let providerStatus = 'sent awaiting status'
+    let storedState = 'PENDING'
+    let staffRole = 'ADMIN'
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).includes('delivery-reports'))
+        return new Response(JSON.stringify({ status: 'success', data: { reports: [{ delivery_status: providerStatus }] } }), { status: 200 })
+      return new Response(JSON.stringify({ status: 'success', data: { message_id: 'new' } }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    mocked.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('FROM staff_users WHERE id='))
+        return { rows: [{ id: 'staff', full_name: 'Admin', role: staffRole, session_version: 0 }] }
+      if (sql.includes('FROM sms_settings'))
+        return { rows: [{ enabled: true, welcome_mode: 'MANUAL', daily_time: '18:00', welcome_template: 'Welcome' }] }
+      if (sql.includes('SELECT provider_id FROM sms_outbox')) return { rows: [{ provider_id: 'old' }] }
+      if (sql.includes('FROM sms_outbox'))
+        return { rows: [{ id: jobId, recipient: '2348031234567', body: 'Welcome', status: 'SENT', delivery_state: storedState, provider_id: 'old' }] }
+      if (sql.startsWith('UPDATE sms_outbox') && sql.includes('RETURNING delivery_state')) {
+        storedState = String(params?.[1])
+        return { rows: [{ delivery_state: storedState }] }
+      }
+      if (sql.startsWith('UPDATE sms_outbox') && sql.includes('RETURNING id,recipient,body'))
+        return { rows: [{ id: jobId, recipient: '2348031234567', body: 'Welcome' }] }
+      return { rows: [] }
+    })
+    const token = signSession({ id: 'staff', role: 'ADMIN' }, secret)
+    const headers = { cookie: `cmams_session=${token}`, origin: 'https://church.example', 'content-type': 'application/json' }
+    const refresh = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/refresh`, { method: 'POST', headers, body: '{}' }))
+    expect(refresh.status).toBe(200)
+    expect(await refresh.json()).toEqual({ deliveryState: 'PENDING' })
+    const denied = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/resend`, { method: 'POST', headers, body: '{}' }))
+    expect(denied.status).toBe(409)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    providerStatus = 'undeliv'
+    const failed = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/refresh`, { method: 'POST', headers, body: '{}' }))
+    expect(await failed.json()).toEqual({ deliveryState: 'FAILED' })
+    const resent = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/resend`, { method: 'POST', headers, body: '{}' }))
+    expect(resent.status).toBe(200)
+    expect(await resent.json()).toEqual({ status: 'SENT' })
+    const deskToken = signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)
+    staffRole = 'REGISTRATION_DESK'
+    const forbidden = await handleApi(new Request(`https://church.example/api/v1/sms/welcome/${jobId}/resend`, {
+      method: 'POST', headers: { ...headers, cookie: `cmams_session=${deskToken}` }, body: '{}',
+    }))
+    expect(forbidden.status).toBe(403)
   })
   it('lets an assigned leader update their cell location but not its name', async () => {
     process.env.SESSION_SECRET = secret

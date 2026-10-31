@@ -30,3 +30,14 @@ it('shows staff management only to administrators', () => {
   ] as const)
     expect(visibleNavigation(role)).not.toContain('Staff')
 })
+
+it('shows the SMS console only to administrators', () => {
+  expect(visibleNavigation('ADMIN')).toContain('SMS')
+  for (const role of [
+    'REGISTRATION_DESK',
+    'SERVICE_SUPERVISOR',
+    'PASTOR_VIEWER',
+    'CELL_LEADER',
+  ] as const)
+    expect(visibleNavigation(role)).not.toContain('SMS')
+})
