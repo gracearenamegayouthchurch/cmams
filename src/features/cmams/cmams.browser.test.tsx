@@ -533,6 +533,110 @@ describe('CMAMS browser workflows', () => {
       .toBeDisabled()
     await expect.element(screen.getByText(/Check-in opens on/i)).toBeVisible()
   })
+  it('edits only a scheduled service with prefilled details', async () => {
+    const id = '11111111-1111-4111-8111-111111111111'
+    const saved: { path: string; body: Record<string, string> }[] = []
+    const service = {
+      id,
+      name: 'Sunday Service',
+      status: 'SCHEDULED',
+      category: 'SUNDAY_SERVICE',
+      scheduled_start_at: '2026-11-01T08:00:00Z',
+      checkin_opens_at: '2026-11-01T07:00:00Z',
+      checkin_closes_at: '2026-11-01T10:00:00Z',
+      locked_eligible_member_count: null,
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input)
+        if (path === `/api/v1/services/${id}` && init?.method === 'PATCH') {
+          saved.push({ path, body: JSON.parse(String(init.body)) })
+          return jsonResponse({
+            service: { ...service, name: 'Youth Service' },
+          })
+        }
+        if (path === '/api/v1/services')
+          return jsonResponse({ services: [service] })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<ServicesPage />)
+    await userEvent.click(screen.getByRole('button', { name: 'Edit service' }))
+    await expect
+      .element(screen.getByLabelText('Edit service name'))
+      .toHaveValue('Sunday Service')
+    await userEvent.clear(screen.getByLabelText('Edit service name'))
+    await userEvent.type(
+      screen.getByLabelText('Edit service name'),
+      'Youth Service'
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await expect.element(screen.getByText('Service updated.')).toBeVisible()
+    expect(saved).toHaveLength(1)
+    expect(saved[0].path).toBe(`/api/v1/services/${id}`)
+    expect(saved[0].body).toMatchObject({
+      name: 'Youth Service',
+      category: 'SUNDAY_SERVICE',
+    })
+    expect(Date.parse(saved[0].body.opensAt)).toBe(
+      Date.parse(service.checkin_opens_at)
+    )
+  })
+
+  it('confirms before canceling a scheduled service and hides it afterward', async () => {
+    const id = '11111111-1111-4111-8111-111111111111'
+    let canceled = false
+    let cancelRequests = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input)
+        if (
+          path === `/api/v1/services/${id}/cancel` &&
+          init?.method === 'POST'
+        ) {
+          canceled = true
+          cancelRequests++
+          return jsonResponse({ service: { id, status: 'CANCELLED' } })
+        }
+        if (path === '/api/v1/services')
+          return jsonResponse({
+            services: canceled
+              ? []
+              : [
+                  {
+                    id,
+                    name: 'Sunday Service',
+                    category: 'SUNDAY_SERVICE',
+                    status: 'SCHEDULED',
+                    scheduled_start_at: '2026-11-01T08:00:00Z',
+                    checkin_opens_at: '2026-11-01T07:00:00Z',
+                    checkin_closes_at: '2026-11-01T10:00:00Z',
+                    locked_eligible_member_count: null,
+                  },
+                ],
+          })
+        return jsonResponse({ error: 'Unexpected request' }, 404)
+      })
+    )
+    const screen = await renderWithShell(<ServicesPage />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Delete service' })
+    )
+    await expect
+      .element(screen.getByRole('heading', { name: /Cancel Sunday Service/i }))
+      .toBeVisible()
+    expect(cancelRequests).toBe(0)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Cancel service now' })
+    )
+    await expect.element(screen.getByText('Service cancelled.')).toBeVisible()
+    expect(cancelRequests).toBe(1)
+    expect(
+      screen.getByRole('heading', { name: 'Sunday Service' }).query()
+    ).toBeNull()
+  })
   it('confirms before closing check-in', async () => {
     let closed = false
     let closeRequests = 0
@@ -585,6 +689,12 @@ describe('CMAMS browser workflows', () => {
     )
     await expect.element(screen.getByText('Check-in closed.')).toBeVisible()
     expect(closeRequests).toBe(1)
+    expect(
+      screen.getByRole('button', { name: 'Edit service' }).query()
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Delete service' }).query()
+    ).toBeNull()
   })
   it('asks which service to scan into when more than one check-in is open', async () => {
     const opens = new Date(Date.now() - 60 * 60 * 1000)

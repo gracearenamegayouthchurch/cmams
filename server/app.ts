@@ -22,7 +22,9 @@ import { compoundRegion } from './compound-regions.js'
 import { issueCard, revokeCard, listActiveCards, listUnissuedPeople } from './cards.js'
 import {
   changeServiceStatus,
+  cancelService,
   createService,
+  editService,
   listServices,
   ServiceTransitionError,
 } from './services.js'
@@ -476,6 +478,21 @@ export async function handleApi(request: Request): Promise<Response> {
         { service: await createService(getDb(), await request.json(), staff.id) },
         201
       )
+    }
+    const serviceEdit = path.match(/^\/api\/v1\/services\/([0-9a-f-]{36})$/i)
+    const serviceCancel = path.match(/^\/api\/v1\/services\/([0-9a-f-]{36})\/cancel$/i)
+    if ((serviceEdit && method === 'PATCH') || (serviceCancel && method === 'POST')) {
+      if (!allow(staff.role, 'services')) return json({ error: 'Action not permitted' }, 403)
+      try {
+        const id = serviceEdit?.[1] ?? serviceCancel![1]
+        return json({ service: serviceEdit
+          ? await editService(getDb(), id, await request.json(), staff.id)
+          : await cancelService(getDb(), id, staff.id) })
+      } catch (error) {
+        if (error instanceof ServiceTransitionError)
+          return json({ error: error.message, code: error.code }, 409)
+        throw error
+      }
     }
     const checkinMatch = path.match(
       /^\/api\/v1\/services\/([0-9a-f-]{36})\/(check-ins|manual-check-ins)$/i

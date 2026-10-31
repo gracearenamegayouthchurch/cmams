@@ -1,5 +1,63 @@
 import { expect, it, vi } from 'vitest'
-import { validateService, changeServiceStatus, createService } from './services.js'
+import { validateService, changeServiceStatus, createService, editService, cancelService } from './services.js'
+
+const scheduledId = '11111111-1111-4111-8111-111111111111'
+const validEdit = { name: 'Updated service', category: 'SPECIAL_EVENT', scheduledStartAt: '2026-11-01T08:00:00Z', opensAt: '2026-11-01T07:00:00Z', closesAt: '2026-11-01T10:00:00Z' }
+
+it('edits only a scheduled service without attendance and audits atomically', async () => {
+  const statements: { sql: string; values?: unknown[] }[] = []
+  const db = { connect: async () => ({ query: async (sql: string, values?: unknown[]) => {
+    statements.push({ sql, values })
+    return { rows: sql.includes('UPDATE services') ? [{ id: scheduledId, name: 'Updated service', status: 'SCHEDULED' }] : [] }
+  }, release: () => {} }) }
+  await expect(editService(db as never, scheduledId, validEdit, 'supervisor')).resolves.toMatchObject({ name: 'Updated service' })
+  expect(statements.find(({ sql }) => sql.includes('UPDATE services'))?.sql).toMatch(/status='SCHEDULED'.*NOT EXISTS/s)
+  expect(statements.find(({ sql }) => sql.includes('UPDATE services'))?.values).toEqual([scheduledId, 'Updated service', 'SPECIAL_EVENT', validEdit.scheduledStartAt, validEdit.opensAt, validEdit.closesAt])
+  expect(statements.find(({ sql }) => sql.includes('INSERT INTO audit_logs'))?.values).toEqual(['supervisor', 'SERVICE_UPDATED', scheduledId])
+  expect(statements.at(-1)?.sql).toBe('COMMIT')
+})
+
+it('cancels a scheduled service without deleting it', async () => {
+  const statements: { sql: string; values?: unknown[] }[] = []
+  const db = { connect: async () => ({ query: async (sql: string, values?: unknown[]) => {
+    statements.push({ sql, values })
+    return { rows: sql.includes('UPDATE services') ? [{ id: scheduledId, status: 'CANCELLED' }] : [] }
+  }, release: () => {} }) }
+  await expect(cancelService(db as never, scheduledId, 'supervisor')).resolves.toMatchObject({ status: 'CANCELLED' })
+  expect(statements.map(({ sql }) => sql).join(' ')).not.toMatch(/DELETE FROM services/i)
+  expect(statements.find(({ sql }) => sql.includes('UPDATE services'))?.sql).toMatch(/status='SCHEDULED'.*NOT EXISTS/s)
+  expect(statements.find(({ sql }) => sql.includes('INSERT INTO audit_logs'))?.values).toEqual(['supervisor', 'SERVICE_CANCELLED', scheduledId])
+})
+
+it('refuses to edit or cancel non-scheduled or attended services', async () => {
+  for (const operation of [
+    (db: never) => editService(db, scheduledId, validEdit, 'supervisor'),
+    (db: never) => cancelService(db, scheduledId, 'supervisor'),
+  ]) {
+    const statements: string[] = []
+    const db = { connect: async () => ({ query: async (sql: string) => { statements.push(sql); return { rows: [] } }, release: () => {} }) }
+    await expect(operation(db as never)).rejects.toMatchObject({ code: 'SERVICE_NOT_EDITABLE' })
+    expect(statements.some((sql) => sql.includes('INSERT INTO audit_logs'))).toBe(false)
+    expect(statements.at(-1)).toBe('ROLLBACK')
+  }
+})
+
+it('rejects invalid edit times before connecting', async () => {
+  const db = { connect: async () => { throw new Error('unexpected connection') } }
+  await expect(editService(db as never, scheduledId, { ...validEdit, closesAt: validEdit.opensAt }, 'supervisor')).rejects.toThrow()
+})
+
+it('rolls back a service edit if its audit insert fails', async () => {
+  const statements: string[] = []
+  const db = { connect: async () => ({ query: async (sql: string) => {
+    statements.push(sql)
+    if (sql.includes('UPDATE services')) return { rows: [{ id: scheduledId, status: 'SCHEDULED' }] }
+    if (sql.includes('INSERT INTO audit_logs')) throw new Error('audit unavailable')
+    return { rows: [] }
+  }, release: () => {} }) }
+  await expect(editService(db as never, scheduledId, validEdit, 'supervisor')).rejects.toThrow('audit unavailable')
+  expect(statements.at(-1)).toBe('ROLLBACK')
+})
 
 it('persists an authorized scheduled service with its check-in window', async () => {
   const writes: unknown[][] = []

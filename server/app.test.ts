@@ -373,6 +373,29 @@ describe('API boundary', () => {
     expect(denied.status).toBe(403)
     expect(inserts).toHaveLength(1)
   })
+  it('permits service edits and cancellation only for managers', async () => {
+    process.env.SESSION_SECRET = secret
+    let role: 'SERVICE_SUPERVISOR' | 'REGISTRATION_DESK' = 'SERVICE_SUPERVISOR'
+    const statements: string[] = []
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('staff_users')
+      ? [{ id: 'staff', full_name: 'Staff', email: 'staff@example.org', role, session_version: 0 }]
+      : [] }))
+    mocked.connect.mockResolvedValue({ query: async (sql: string) => {
+      statements.push(sql)
+      return { rows: sql.includes('UPDATE services') ? [{ id: '11111111-1111-4111-8111-111111111111', status: sql.includes("'CANCELLED'") ? 'CANCELLED' : 'SCHEDULED' }] : [] }
+    }, release: () => {} })
+    const base = 'https://church.example/api/v1/services/11111111-1111-4111-8111-111111111111'
+    const request = (url: string, method: string, body: unknown, actor: 'SERVICE_SUPERVISOR' | 'REGISTRATION_DESK') => handleApi(new Request(url, {
+      method, headers: { origin: 'https://church.example', 'content-type': 'application/json', cookie: `cmams_session=${signSession({ id: 'staff', role: actor }, secret)}` }, body: JSON.stringify(body),
+    }))
+    const edit = { name: 'Updated service', category: 'SPECIAL_EVENT', scheduledStartAt: '2026-11-01T08:00:00Z', opensAt: '2026-11-01T07:00:00Z', closesAt: '2026-11-01T10:00:00Z' }
+    expect((await request(base, 'PATCH', edit, 'SERVICE_SUPERVISOR')).status).toBe(200)
+    expect((await request(`${base}/cancel`, 'POST', {}, 'SERVICE_SUPERVISOR')).status).toBe(200)
+    role = 'REGISTRATION_DESK'
+    expect((await request(base, 'PATCH', edit, 'REGISTRATION_DESK')).status).toBe(403)
+    expect((await request(`${base}/cancel`, 'POST', {}, 'REGISTRATION_DESK')).status).toBe(403)
+    expect(statements.filter((sql) => sql.includes('UPDATE services'))).toHaveLength(2)
+  })
   it('lets the registration desk scan a card without permission to manage services', async () => {
     process.env.SESSION_SECRET = secret
     mocked.query.mockImplementation(async (sql: string) => ({

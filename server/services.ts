@@ -28,6 +28,40 @@ export class ServiceTransitionError extends Error {
   constructor(message: string, readonly code: string) { super(message) }
 }
 
+async function changeScheduledService(db: Pick<pg.Pool, 'connect'>, id: string, staffId: string,
+  change: { input: z.infer<typeof fields> } | { cancel: true }) {
+  const serviceId = z.uuid().parse(id)
+  const client = await db.connect()
+  try {
+    await client.query('BEGIN')
+    const result = 'cancel' in change
+      ? await client.query(`UPDATE services SET status='CANCELLED' WHERE id=$1 AND status='SCHEDULED'
+          AND NOT EXISTS (SELECT 1 FROM attendance_records WHERE service_id=$1)
+          RETURNING id,name,category,status,scheduled_start_at,checkin_opens_at,checkin_closes_at,locked_eligible_member_count`, [serviceId])
+      : await client.query(`UPDATE services SET name=$2,category=$3,scheduled_start_at=$4,checkin_opens_at=$5,checkin_closes_at=$6
+          WHERE id=$1 AND status='SCHEDULED'
+          AND NOT EXISTS (SELECT 1 FROM attendance_records WHERE service_id=$1)
+          RETURNING id,name,category,status,scheduled_start_at,checkin_opens_at,checkin_closes_at,locked_eligible_member_count`,
+          [serviceId, change.input.name, change.input.category, change.input.scheduledStartAt, change.input.opensAt, change.input.closesAt])
+    if (!result.rows.length) throw new ServiceTransitionError('Only a scheduled service without attendance can be changed', 'SERVICE_NOT_EDITABLE')
+    await client.query(`INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id)
+      VALUES($1,$2,'service',$3)`, [staffId, 'cancel' in change ? 'SERVICE_CANCELLED' : 'SERVICE_UPDATED', serviceId])
+    await client.query('COMMIT')
+    return result.rows[0]
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally { client.release() }
+}
+
+export async function editService(db: Pick<pg.Pool, 'connect'>, id: string, input: unknown, staffId: string) {
+  return changeScheduledService(db, id, staffId, { input: validateService(input) })
+}
+
+export async function cancelService(db: Pick<pg.Pool, 'connect'>, id: string, staffId: string) {
+  return changeScheduledService(db, id, staffId, { cancel: true })
+}
+
 export async function changeServiceStatus(db: Pick<pg.Pool, 'connect'>, serviceId: string, action: 'open' | 'close') {
   const client = await db.connect()
   try {

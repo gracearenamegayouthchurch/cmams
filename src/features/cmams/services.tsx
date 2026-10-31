@@ -11,7 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   formatCategory,
   formatDateTime,
@@ -77,19 +77,26 @@ export function ServicesPage() {
   const [opens, setOpens] = useState<Date | undefined>()
   const [closes, setCloses] = useState<Date | undefined>()
   const [closeTarget, setCloseTarget] = useState<Service | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<Service | null>(null)
+  const [editingService, setEditingService] = useState<Service | null>(null)
 
   const mutation = useMutation({
     mutationFn: ({
       path,
       body,
+      method = 'POST',
     }: {
       path: string
       body: Record<string, string>
-    }) => api(path, { method: 'POST', body: JSON.stringify(body) }),
+      method?: 'POST' | 'PATCH'
+    }) => api(path, { method, body: JSON.stringify(body) }),
     onSuccess: async (_, variables) => {
       if (variables.path.endsWith('/open'))
         setMessage('Check-in is now open for this service.')
       else if (variables.path.endsWith('/close')) setMessage('Check-in closed.')
+      else if (variables.path.endsWith('/cancel'))
+        setMessage('Service cancelled.')
+      else if (variables.method === 'PATCH') setMessage('Service updated.')
       else setMessage('Service scheduled.')
       await queryClient.invalidateQueries({ queryKey: ['services'] })
     },
@@ -114,6 +121,18 @@ export function ServicesPage() {
     setFormError('')
   }
 
+  function startEditing(service: Service) {
+    setEditingService(service)
+    setName(service.name)
+    setCategory(service.category)
+    setScheduled(new Date(service.scheduled_start_at))
+    setOpens(new Date(service.checkin_opens_at))
+    setCloses(new Date(service.checkin_closes_at))
+    setFormError('')
+    setMessage('')
+    window.scrollTo?.({ top: 0, behavior: 'smooth' })
+  }
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessage('')
@@ -128,7 +147,10 @@ export function ServicesPage() {
     }
     try {
       await mutation.mutateAsync({
-        path: '/api/v1/services',
+        path: editingService
+          ? `/api/v1/services/${editingService.id}`
+          : '/api/v1/services',
+        method: editingService ? 'PATCH' : 'POST',
         body: {
           name,
           category,
@@ -138,6 +160,7 @@ export function ServicesPage() {
         },
       })
       setName('')
+      setEditingService(null)
     } catch {
       /* mutation.error displays the failure */
     }
@@ -180,7 +203,9 @@ export function ServicesPage() {
           <CardHeader>
             <div className='flex items-start justify-between gap-2'>
               <div>
-                <CardTitle>Schedule a service</CardTitle>
+                <CardTitle>
+                  {editingService ? 'Edit service' : 'Schedule a service'}
+                </CardTitle>
                 <CardDescription className='mt-1'>
                   Set the start time and check-in window.
                 </CardDescription>
@@ -201,7 +226,9 @@ export function ServicesPage() {
               className='space-y-4'
             >
               <div className='space-y-1.5'>
-                <Label htmlFor='service-name'>Service name</Label>
+                <Label htmlFor='service-name'>
+                  {editingService ? 'Edit service name' : 'Service name'}
+                </Label>
                 <Input
                   id='service-name'
                   required
@@ -265,8 +292,29 @@ export function ServicesPage() {
               )}
               <Button disabled={mutation.isPending} className='w-full'>
                 <CalendarPlus className='size-4' />
-                {mutation.isPending ? 'Saving…' : 'Schedule service'}
+                {mutation.isPending
+                  ? 'Saving…'
+                  : editingService
+                    ? 'Save changes'
+                    : 'Schedule service'}
               </Button>
+              {editingService && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  className='w-full'
+                  onClick={() => {
+                    setEditingService(null)
+                    setName('')
+                    setScheduled(undefined)
+                    setOpens(undefined)
+                    setCloses(undefined)
+                    setFormError('')
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
             </form>
           </CardContent>
         </Card>
@@ -325,6 +373,27 @@ export function ServicesPage() {
                 <div className='flex flex-wrap gap-2'>
                   {service.status === 'SCHEDULED' && (
                     <div className='space-y-1.5 sm:text-right'>
+                      <div className='flex gap-2 sm:justify-end'>
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          disabled={mutation.isPending}
+                          onClick={() => startEditing(service)}
+                        >
+                          Edit service
+                        </Button>
+                        <Button
+                          size='sm'
+                          variant='destructive'
+                          disabled={mutation.isPending}
+                          onClick={() => {
+                            setMessage('')
+                            setCancelTarget(service)
+                          }}
+                        >
+                          Delete service
+                        </Button>
+                      </div>
                       <Button
                         size='sm'
                         disabled={
@@ -394,6 +463,32 @@ export function ServicesPage() {
         </div>
       </div>
 
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !mutation.isPending) setCancelTarget(null)
+        }}
+        title={`Cancel ${cancelTarget?.name ?? 'this service'}?`}
+        desc='This will hide the scheduled service without deleting its record. Services with check-ins cannot be cancelled.'
+        confirmText='Cancel service now'
+        destructive
+        isLoading={mutation.isPending}
+        handleConfirm={() => {
+          if (!cancelTarget) return
+          setMessage('')
+          void mutation
+            .mutateAsync({
+              path: `/api/v1/services/${cancelTarget.id}/cancel`,
+              body: {},
+            })
+            .then(() => {
+              if (editingService?.id === cancelTarget.id)
+                setEditingService(null)
+              setCancelTarget(null)
+            })
+            .catch(() => {})
+        }}
+      />
       <ConfirmDialog
         open={closeTarget !== null}
         onOpenChange={(open) => {
