@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type pg from 'pg'
 import type { StaffRole } from './rbac.js'
 import { compoundRegion } from './compound-regions.js'
+import { isValidHostelName } from './hostel-locations.js'
 
 type Db = Pick<pg.Pool, 'query' | 'connect'>
 export type CellActor = { id: string; role: StaffRole }
@@ -14,6 +15,8 @@ const cellFields = z.object({
   name: z.string().trim().min(1).max(100),
   location: z.string().trim().max(200).nullish(),
   region: compoundRegion,
+}).refine((data) => data.region !== 'HOSTEL' || !data.location || isValidHostelName(data.location), {
+  path: ['location'], message: 'Choose a listed boys or girls hostel and building'
 })
 const locationFields = z.object({ location: z.string().trim().min(1).max(200) }).strict()
 
@@ -138,8 +141,10 @@ export async function updateCellLocation(db: Db, cellId: string, input: unknown,
   const client = await db.connect()
   try {
     await client.query('BEGIN')
-    const active = await client.query('SELECT id FROM cells WHERE id=$1 AND is_active=true FOR UPDATE', [id])
+    const active = await client.query('SELECT id,region FROM cells WHERE id=$1 AND is_active=true FOR UPDATE', [id])
     if (!active.rows.length) throw new CellAccessError()
+    if (active.rows[0].region === 'HOSTEL' && !isValidHostelName(location))
+      throw new z.ZodError([{ code: 'custom', path: ['location'], message: 'Choose a listed boys or girls hostel and building' }])
     if (actor.role === 'CELL_LEADER') {
       const assignment = await client.query(
         `SELECT cell_id FROM cell_leader_assignments WHERE cell_id=$1 AND staff_id=$2 AND valid_to IS NULL`,

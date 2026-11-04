@@ -3,6 +3,7 @@ import type pg from 'pg'
 import { maskPhone, type StaffRole } from './rbac.js'
 import { queueWelcome } from './sms.js'
 import { normalizePhone } from './phone.js'
+import { isValidHostelName } from './hostel-locations.js'
 import {
   compoundRegion,
   normalizeCompoundName,
@@ -41,6 +42,8 @@ const registration = z.object({
   householdId: z.uuid().optional(),
   consent: z.literal(true),
   confirmDistinct: z.boolean().optional(),
+}).refine((data) => data.region !== 'HOSTEL' || isValidHostelName(data.compoundName), {
+  path: ['compoundName'], message: 'Choose a listed boys or girls hostel and building'
 }).refine((data) => {
   // A yearless February 29 is possible; use a known leap year to validate it.
   const year = data.birthYear ?? 2000

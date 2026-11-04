@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { HostelLocationFields } from './hostel-location-fields'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { REGIONS, regionLabel } from './regions'
@@ -257,22 +258,39 @@ export function CellsPage() {
                 />
               </div>
               <div className='min-w-40 flex-1 space-y-1'>
-                <Label htmlFor='new-cell-location'>
-                  Saturday meeting location
-                </Label>
-                <Input
-                  id='new-cell-location'
-                  maxLength={200}
-                  value={newLocation}
-                  onChange={(event) => setNewLocation(event.target.value)}
-                />
-                <p className='text-xs text-muted-foreground'>
-                  Optional — assign later if not known.
-                </p>
+                {newRegion === 'HOSTEL' ? (
+                  <HostelLocationFields
+                    value={newLocation}
+                    onChange={setNewLocation}
+                    prefix='new-cell'
+                  />
+                ) : (
+                  <>
+                    <Label htmlFor='new-cell-location'>
+                      Saturday meeting location
+                    </Label>
+                    <Input
+                      id='new-cell-location'
+                      maxLength={200}
+                      value={newLocation}
+                      onChange={(event) => setNewLocation(event.target.value)}
+                    />
+                    <p className='text-xs text-muted-foreground'>
+                      Optional — assign later if not known.
+                    </p>
+                  </>
+                )}
               </div>
               <div className='min-w-40 flex-1 space-y-1'>
                 <Label htmlFor='new-cell-region'>Region</Label>
-                <Select value={newRegion} onValueChange={setNewRegion}>
+                <Select
+                  value={newRegion}
+                  onValueChange={(value) => {
+                    if (value === 'HOSTEL' || newRegion === 'HOSTEL')
+                      setNewLocation('')
+                    setNewRegion(value)
+                  }}
+                >
                   <SelectTrigger id='new-cell-region' className='w-full'>
                     <SelectValue placeholder='Choose region' />
                   </SelectTrigger>
@@ -368,16 +386,35 @@ export function CellsPage() {
                       />
                     </div>
                     <div className='space-y-1'>
-                      <Label htmlFor='edit-cell-location'>Location</Label>
-                      <Input
-                        id='edit-cell-location'
-                        value={location}
-                        onChange={(event) => setLocation(event.target.value)}
-                      />
+                      {region === 'HOSTEL' ? (
+                        <HostelLocationFields
+                          value={location}
+                          onChange={setLocation}
+                          prefix='edit-cell'
+                        />
+                      ) : (
+                        <>
+                          <Label htmlFor='edit-cell-location'>Location</Label>
+                          <Input
+                            id='edit-cell-location'
+                            value={location}
+                            onChange={(event) =>
+                              setLocation(event.target.value)
+                            }
+                          />
+                        </>
+                      )}
                     </div>
                     <div className='space-y-1'>
                       <Label htmlFor='edit-cell-region'>Region</Label>
-                      <Select value={region} onValueChange={setRegion}>
+                      <Select
+                        value={region}
+                        onValueChange={(value) => {
+                          if (value === 'HOSTEL' || region === 'HOSTEL')
+                            setLocation('')
+                          setRegion(value)
+                        }}
+                      >
                         <SelectTrigger id='edit-cell-region' className='w-40'>
                           <SelectValue placeholder='Choose region' />
                         </SelectTrigger>
@@ -530,21 +567,33 @@ export function CellsPage() {
                   }}
                 >
                   <div className='min-w-48 flex-1 space-y-1'>
-                    <Label htmlFor='leader-cell-location'>
-                      Meeting location
-                    </Label>
-                    <Input
-                      id='leader-cell-location'
-                      required
-                      maxLength={200}
-                      value={leaderLocation}
-                      onChange={(event) =>
-                        setLeaderLocation(event.target.value)
-                      }
-                      placeholder={
-                        selected.meeting_location || 'Assign a meeting place'
-                      }
-                    />
+                    {selected.region === 'HOSTEL' ? (
+                      <HostelLocationFields
+                        key={selected.id}
+                        value={leaderLocation}
+                        onChange={setLeaderLocation}
+                        prefix='leader-cell'
+                      />
+                    ) : (
+                      <>
+                        <Label htmlFor='leader-cell-location'>
+                          Meeting location
+                        </Label>
+                        <Input
+                          id='leader-cell-location'
+                          required
+                          maxLength={200}
+                          value={leaderLocation}
+                          onChange={(event) =>
+                            setLeaderLocation(event.target.value)
+                          }
+                          placeholder={
+                            selected.meeting_location ||
+                            'Assign a meeting place'
+                          }
+                        />
+                      </>
+                    )}
                   </div>
                   <Button disabled={busy || !leaderLocation.trim()}>
                     Save location

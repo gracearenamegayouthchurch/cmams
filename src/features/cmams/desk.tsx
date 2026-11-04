@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select'
 import { CardDownloads } from './cards'
 import { formatStage, stageBadgeClass } from './format'
+import { HostelLocationFields } from './hostel-location-fields'
 import { ChurchPage } from './pages'
 import { REGIONS } from './regions'
 import { ServicePicker } from './service-picker'
@@ -464,6 +465,8 @@ export function DeskPage() {
                     <Select
                       value={region}
                       onValueChange={(value) => {
+                        if (value === 'HOSTEL' || region === 'HOSTEL')
+                          setCompoundName('')
                         setRegion(value)
                         setCandidates([])
                         setConfirmed(false)
@@ -482,74 +485,93 @@ export function DeskPage() {
                     </Select>
                   </div>
                   <div className='space-y-1.5 sm:col-span-2'>
-                    <Label htmlFor='compound'>Compound</Label>
-                    <Input
-                      id='compound'
-                      required
-                      maxLength={100}
-                      autoComplete='off'
-                      value={compoundName}
-                      placeholder='Type the compound name'
-                      onFocus={() => setCompoundFocused(true)}
-                      onBlur={() => setCompoundFocused(false)}
-                      onChange={(event) => {
-                        setCompoundName(event.target.value)
-                        setCandidates([])
-                        setConfirmed(false)
-                      }}
-                      aria-describedby='compound-help'
-                    />
-                    <p
-                      id='compound-help'
-                      className='text-xs text-muted-foreground'
-                    >
-                      Type what the member says. New compounds are saved
-                      automatically under the selected region.
-                    </p>
-                    {compoundFocused &&
-                      region &&
-                      (compoundSuggestions.length > 0 ||
-                        crossRegionCompounds.length > 0) && (
-                        <div className='rounded-lg border bg-background p-1 shadow-sm'>
-                          {compoundSuggestions.map((item) => (
-                            <button
-                              key={item.id}
-                              type='button'
-                              className='block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted'
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => setCompoundName(item.name)}
-                            >
-                              {item.name}
-                            </button>
-                          ))}
-                          {crossRegionCompounds.map((item) => (
-                            <button
-                              key={item.id}
-                              type='button'
-                              className='block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted'
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => {
-                                setCompoundName(item.name)
-                                setRegion(item.region)
-                              }}
-                            >
-                              <span className='text-amber-700 dark:text-amber-300'>
-                                Already under {regionLabel(item.region)}:
-                              </span>{' '}
-                              {item.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    {exactCompound && (
-                      <p className='text-xs text-emerald-700 dark:text-emerald-300'>
-                        Using the saved compound “{exactCompound.name}”.
-                      </p>
-                    )}
-                    {!region && compoundName.trim() && (
-                      <p className='text-xs text-muted-foreground'>
-                        Choose a region to see compounds already saved there.
-                      </p>
+                    {region === 'HOSTEL' ? (
+                      <HostelLocationFields
+                        value={compoundName}
+                        prefix='registration'
+                        onChange={(value) => {
+                          setCompoundName(value)
+                          setCandidates([])
+                          setConfirmed(false)
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <Label htmlFor='compound'>Compound</Label>
+                        <Input
+                          id='compound'
+                          required
+                          maxLength={100}
+                          autoComplete='off'
+                          value={compoundName}
+                          placeholder='Type the compound name'
+                          onFocus={() => setCompoundFocused(true)}
+                          onBlur={() => setCompoundFocused(false)}
+                          onChange={(event) => {
+                            setCompoundName(event.target.value)
+                            setCandidates([])
+                            setConfirmed(false)
+                          }}
+                          aria-describedby='compound-help'
+                        />
+                        <p
+                          id='compound-help'
+                          className='text-xs text-muted-foreground'
+                        >
+                          Type what the member says. New compounds are saved
+                          automatically under the selected region.
+                        </p>
+                        {compoundFocused &&
+                          region &&
+                          (compoundSuggestions.length > 0 ||
+                            crossRegionCompounds.length > 0) && (
+                            <div className='rounded-lg border bg-background p-1 shadow-sm'>
+                              {compoundSuggestions.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type='button'
+                                  className='block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted'
+                                  onMouseDown={(event) =>
+                                    event.preventDefault()
+                                  }
+                                  onClick={() => setCompoundName(item.name)}
+                                >
+                                  {item.name}
+                                </button>
+                              ))}
+                              {crossRegionCompounds.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type='button'
+                                  className='block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted'
+                                  onMouseDown={(event) =>
+                                    event.preventDefault()
+                                  }
+                                  onClick={() => {
+                                    setCompoundName(item.name)
+                                    setRegion(item.region)
+                                  }}
+                                >
+                                  <span className='text-amber-700 dark:text-amber-300'>
+                                    Already under {regionLabel(item.region)}:
+                                  </span>{' '}
+                                  {item.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        {exactCompound && (
+                          <p className='text-xs text-emerald-700 dark:text-emerald-300'>
+                            Using the saved compound “{exactCompound.name}”.
+                          </p>
+                        )}
+                        {!region && compoundName.trim() && (
+                          <p className='text-xs text-muted-foreground'>
+                            Choose a region to see compounds already saved
+                            there.
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

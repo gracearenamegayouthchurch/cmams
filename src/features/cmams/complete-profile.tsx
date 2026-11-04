@@ -25,6 +25,7 @@ import {
 import { homeForRole } from './access'
 import { CardDownloads } from './cards'
 import { formatRole } from './format'
+import { HostelLocationFields } from './hostel-location-fields'
 import { ChurchPage } from './pages'
 import { REGIONS } from './regions'
 import { type IssuedCard } from './types'
@@ -342,7 +343,14 @@ export function CompleteProfilePage() {
                 {/* Campus Region */}
                 <div className='space-y-1'>
                   <Label htmlFor='region'>Campus Region / Area</Label>
-                  <Select value={region} onValueChange={setRegion}>
+                  <Select
+                    value={region}
+                    onValueChange={(value) => {
+                      if (value === 'HOSTEL' || region === 'HOSTEL')
+                        setCompoundName('')
+                      setRegion(value)
+                    }}
+                  >
                     <SelectTrigger id='region'>
                       <SelectValue />
                     </SelectTrigger>
@@ -358,20 +366,30 @@ export function CompleteProfilePage() {
 
                 {/* Compound / Hostel */}
                 <div className='space-y-1'>
-                  <Label htmlFor='compound'>Hostel / Compound Name</Label>
-                  <Input
-                    id='compound'
-                    required
-                    placeholder='e.g. Bethel, Zion, Main Campus'
-                    list='profile-compounds'
-                    value={compoundName}
-                    onChange={(e) => setCompoundName(e.target.value)}
-                  />
-                  <datalist id='profile-compounds'>
-                    {filteredCompounds.map((c) => (
-                      <option key={c.id} value={c.name} />
-                    ))}
-                  </datalist>
+                  {region === 'HOSTEL' ? (
+                    <HostelLocationFields
+                      value={compoundName}
+                      onChange={setCompoundName}
+                      prefix='profile'
+                    />
+                  ) : (
+                    <>
+                      <Label htmlFor='compound'>Compound Name</Label>
+                      <Input
+                        id='compound'
+                        required
+                        placeholder='e.g. Bethel, Zion, Main Campus'
+                        list='profile-compounds'
+                        value={compoundName}
+                        onChange={(e) => setCompoundName(e.target.value)}
+                      />
+                      <datalist id='profile-compounds'>
+                        {filteredCompounds.map((c) => (
+                          <option key={c.id} value={c.name} />
+                        ))}
+                      </datalist>
+                    </>
+                  )}
                 </div>
 
                 {/* Room */}

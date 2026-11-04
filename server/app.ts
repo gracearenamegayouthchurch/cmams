@@ -54,6 +54,7 @@ import { analyticsReport } from './analytics.js'
 import { getSmsSettings, listWelcomeMessages, processSmsOutbox, refreshDelivery, resendWelcome, sendImmediateWelcome, sendManualWelcome, SmsError, updateSmsSettings } from './sms.js'
 import { fetchDeliveryStatus, sendBulkSms, smsConfigured } from './sms-provider.js'
 import { normalizePhone } from './phone.js'
+import { isValidHostelName } from './hostel-locations.js'
 
 const loginFields = z.object({
   email: z.email(),
@@ -290,6 +291,8 @@ export async function handleApi(request: Request): Promise<Response> {
         birthMonth: z.number().int().min(1).max(12),
         birthDay: z.number().int().min(1).max(31),
         birthYear: z.number().int().min(1900).max(new Date().getFullYear()).nullable().optional(),
+      }).refine((data) => data.region !== 'HOSTEL' || isValidHostelName(data.compoundName), {
+        path: ['compoundName'], message: 'Choose a listed boys or girls hostel and building'
       }).parse(await request.json())
 
       let formattedPhone: string | null = null

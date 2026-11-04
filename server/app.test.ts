@@ -16,6 +16,22 @@ afterEach(() => {
 })
 
 describe('API boundary', () => {
+  it('rejects an unlisted hostel during profile completion before writing to the database', async () => {
+    process.env.SESSION_SECRET = secret
+    mocked.connect.mockClear()
+    mocked.query.mockImplementation(async (sql: string) => ({ rows: sql.includes('FROM staff_users WHERE id=')
+      ? [{ id: 'staff', full_name: 'Member', role: 'REGISTRATION_DESK', session_version: 0 }]
+      : [] }))
+    const token = signSession({ id: 'staff', role: 'REGISTRATION_DESK' }, secret)
+    const response = await handleApi(new Request('https://church.example/api/v1/profile', {
+      method: 'POST',
+      headers: { origin: 'https://church.example', 'content-type': 'application/json', cookie: `cmams_session=${token}` },
+      body: JSON.stringify({ region: 'HOSTEL', compoundName: 'Boys Hostel — Tetfund',
+        birthMonth: 1, birthDay: 2 }),
+    }))
+    expect(response.status).toBe(400)
+    expect(mocked.connect).not.toHaveBeenCalled()
+  })
   it('restricts SMS settings to admins and protects worker with a separate secret', async () => {
     process.env.SESSION_SECRET = secret
     process.env.SMS_WORKER_SECRET = 'test-worker-secret-1234567890123456'
@@ -103,7 +119,7 @@ describe('API boundary', () => {
     mocked.connect.mockResolvedValue({
       query: async (sql: string) => {
         statements.push(sql)
-        if (sql.startsWith('SELECT id FROM cells')) return { rows: [{ id: cellId }] }
+        if (sql.startsWith('SELECT id,region FROM cells')) return { rows: [{ id: cellId, region: 'NDAR' }] }
         if (sql.includes('FROM cell_leader_assignments')) return { rows: [{ cell_id: cellId }] }
         if (sql.startsWith('UPDATE cells')) return { rows: [{ id: cellId, meeting_location: 'Hall B' }] }
         return { rows: [] }
@@ -332,6 +348,7 @@ describe('API boundary', () => {
       [{ email: 'not-an-email' }, 'email'],
       [{ birthMonth: 2, birthDay: 30 }, 'birth day'],
       [{ departmentId: 'Choir' }, 'department'],
+      [{ region: 'HOSTEL', compoundName: 'Girls Hostel — Needs Assessment' }, 'compound'],
     ] as const) {
       const response = await handleApi(new Request('https://church.example/api/v1/people', {
         method: 'POST',
