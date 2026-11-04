@@ -5,6 +5,7 @@ import {
   compoundRegion,
   type CompoundRegion,
 } from './compound-regions.js'
+import { isValidHostelName } from './hostel-locations.js'
 
 type Db = Pick<pg.Pool, 'query'>
 type WritableDb = Pick<pg.Pool, 'query' | 'connect'>
@@ -62,6 +63,9 @@ export async function updateCompound(
     .object({
       name: z.string().trim().min(1).max(100),
       region: compoundRegion,
+    })
+    .refine((value) => value.region !== 'HOSTEL' || isValidHostelName(value.name), {
+      path: ['name'], message: 'Choose a listed boys or girls hostel and building'
     })
     .parse(input)
   const client = await db.connect()

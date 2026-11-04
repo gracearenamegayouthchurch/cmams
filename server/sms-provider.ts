@@ -1,4 +1,5 @@
 import { SmsError } from './sms.js'
+import { deliveredValues, failedValues } from './sms-delivery-status.js'
 
 type Fetcher = typeof fetch
 export function smsConfigured() {
@@ -47,13 +48,11 @@ export async function fetchDeliveryStatus(providerId: string, fetcher: Fetcher =
     if (!response.ok || result.status !== 'success') throw new SmsError('Could not retrieve delivery report', 503)
     const statuses = (result.data?.reports ?? []).map((report) => report.delivery_status?.trim().toLowerCase() ?? '')
     if (statuses.length === 0) return 'sent awaiting status'
-    const delivered = new Set(['delivrd', 'delivered', 'success'])
-    if (statuses.every((status) => delivered.has(status))) return statuses[0]
-    const finalFailure = new Set(['undeliv', 'expired', 'rejectd', 'failed', 'rejected', 'invalid'])
+    if (statuses.every((status) => deliveredValues.has(status))) return statuses[0]
     // A message with any recipient still pending cannot be treated as failed.
-    if (statuses.some((status) => !delivered.has(status) && !finalFailure.has(status))) return 'sent awaiting status'
+    if (statuses.some((status) => !deliveredValues.has(status) && !failedValues.has(status))) return 'sent awaiting status'
     // Mixed delivered/failed recipients need review; resending the whole message would duplicate a delivery.
-    if (!statuses.every((status) => finalFailure.has(status))) return 'sent awaiting status'
+    if (!statuses.every((status) => failedValues.has(status))) return 'sent awaiting status'
     return statuses[0]
   } finally { clearTimeout(timeout) }
 }

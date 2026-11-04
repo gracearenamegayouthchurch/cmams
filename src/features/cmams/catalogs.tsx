@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { HostelLocationFields } from './hostel-location-fields'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 
@@ -189,18 +190,29 @@ export function CatalogsPage() {
                         }}
                       >
                         <div className='min-w-40 flex-1 space-y-1'>
-                          <Label htmlFor={`compound-name-${entry.id}`}>
-                            Compound name
-                          </Label>
-                          <Input
-                            id={`compound-name-${entry.id}`}
-                            required
-                            maxLength={100}
-                            value={compoundName}
-                            onChange={(event) =>
-                              setCompoundName(event.target.value)
-                            }
-                          />
+                          {compoundRegion === 'HOSTEL' ? (
+                            <HostelLocationFields
+                              key={entry.id}
+                              prefix={`catalog-${entry.id}`}
+                              value={compoundName}
+                              onChange={setCompoundName}
+                            />
+                          ) : (
+                            <>
+                              <Label htmlFor={`compound-name-${entry.id}`}>
+                                Compound name
+                              </Label>
+                              <Input
+                                id={`compound-name-${entry.id}`}
+                                required
+                                maxLength={100}
+                                value={compoundName}
+                                onChange={(event) =>
+                                  setCompoundName(event.target.value)
+                                }
+                              />
+                            </>
+                          )}
                         </div>
                         <div className='w-40 space-y-1'>
                           <Label htmlFor={`compound-region-${entry.id}`}>
@@ -208,7 +220,14 @@ export function CatalogsPage() {
                           </Label>
                           <Select
                             value={compoundRegion}
-                            onValueChange={setCompoundRegion}
+                            onValueChange={(value) => {
+                              if (
+                                value === 'HOSTEL' ||
+                                compoundRegion === 'HOSTEL'
+                              )
+                                setCompoundName('')
+                              setCompoundRegion(value)
+                            }}
                           >
                             <SelectTrigger
                               id={`compound-region-${entry.id}`}

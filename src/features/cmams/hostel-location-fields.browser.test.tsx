@@ -15,6 +15,12 @@ it('filters buildings by hostel and clears the previous choice when hostel chang
       <>
         <HostelLocationFields prefix='test' value={value} onChange={setValue} />
         <output data-testid='selected-hostel'>{value}</output>
+        <button
+          type='button'
+          onClick={() => setValue('Girls Hostel — New Tetfund')}
+        >
+          Load saved hostel
+        </button>
       </>
     )
   }
@@ -47,4 +53,9 @@ it('filters buildings by hostel and clears the previous choice when hostel chang
   expect(
     page.getByRole('option', { name: 'Needs Assessment' }).elements()
   ).toHaveLength(0)
+  await userEvent.keyboard('{Escape}')
+  await userEvent.click(page.getByRole('button', { name: 'Load saved hostel' }))
+  await expect
+    .element(page.getByRole('combobox', { name: 'Building' }))
+    .toHaveTextContent('New Tetfund')
 })

@@ -25,7 +25,7 @@ export function HostelLocationFields({
 }) {
   const parsed = parseHostelName(value)
   const [draftCategory, setDraftCategory] = useState<HostelCategory | ''>('')
-  const category = draftCategory || parsed?.category || ''
+  const category = parsed?.category ?? draftCategory
   return (
     <div className='flex flex-wrap gap-3'>
       <div className='min-w-40 flex-1 space-y-1'>

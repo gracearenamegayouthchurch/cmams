@@ -11,6 +11,14 @@ import {
 const source = '11111111-1111-4111-8111-111111111111'
 const target = '22222222-2222-4222-8222-222222222222'
 
+it('rejects arbitrary hostel names through the admin catalog update', async () => {
+  const db = { connect: async () => { throw new Error('should not write') } }
+  await expect(updateCompound(db as never, source,
+    { region: 'HOSTEL', name: 'Boys Hostel — Tetfund' }, 'staff')).rejects.toThrow()
+  await expect(updateCompound(db as never, source,
+    { region: 'HOSTEL', name: 'Needs Assessment' }, 'staff')).rejects.toThrow()
+})
+
 it('lists active compounds with regions, departments, and the region choices', async () => {
   const statements: string[] = []
   const db = {

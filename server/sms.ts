@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type pg from 'pg'
 import { normalizePhone } from './phone.js'
+import { deliveredValues, failedValues } from './sms-delivery-status.js'
 
 type Db = Pick<pg.Pool, 'query'>
 type SmsClient = Pick<pg.PoolClient, 'query'>
@@ -17,8 +18,6 @@ export class SmsError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
 }
 
-const deliveredValues = new Set(['delivrd', 'delivered', 'success'])
-const failedValues = new Set(['undeliv', 'expired', 'rejectd', 'failed', 'rejected', 'invalid'])
 export function deliveryState(status: string): DeliveryState {
   const value = status.trim().toLowerCase()
   if (deliveredValues.has(value)) return 'DELIVERED'
