@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
   Check,
   CheckSquare,
+  Copy,
   CreditCard,
   Download,
   Eye,
   FileText,
   MessageCircle,
+  MoreHorizontal,
   Printer,
   RefreshCw,
   Search,
@@ -37,10 +38,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
+  buildWhatsAppShare,
   downloadBlob,
   downloadDataUrl,
   printCard,
@@ -81,46 +90,75 @@ export type UnissuedPerson = {
   registered_at: string
 }
 
-export function buildWhatsAppShare(card: {
-  first_name?: string
-  last_name?: string
-  memberName?: string
-  member_code?: string
-  memberCode?: string
-  short_code?: string
+type ReplacePromptTarget = {
+  personId: string
+  name: string
+  memberCode: string
   shortCode?: string
-  phone_e164?: string | null
-  phone?: string | null
-}) {
-  const name =
-    card.memberName ||
-    [card.first_name, card.last_name].filter(Boolean).join(' ') ||
-    'Beloved Member'
-  const memberCode = card.member_code || card.memberCode || ''
-  const shortCode = card.short_code || card.shortCode || ''
-  const rawPhone = (card.phone_e164 || card.phone || '').replace(/\D/g, '')
+}
 
-  const message = [
-    `*Grace Arena Mega Youth Church*`,
-    `*Service Check-in Card*`,
-    ``,
-    `Hello ${name},`,
-    ``,
-    `Here are your check-in card details:`,
-    `• Member Code: *${memberCode}*`,
-    `• Check-in Shortcode: *${shortCode}*`,
-    ``,
-    `Present this shortcode or your card at the ushers' desk when you arrive for service.`,
-    ``,
-    `_We look forward to worshipping with you!_`,
-  ].join('\n')
+function formatShortDate(iso?: string | null, withTime = false) {
+  if (!iso) return null
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}),
+  })
+}
+
+function shareCardDetails(
+  share: ReturnType<typeof buildWhatsAppShare>,
+  onCopied?: () => void
+) {
+  if (share.whatsappUrl) {
+    window.open(share.whatsappUrl, '_blank', 'noopener,noreferrer')
+    toast.success('Opening WhatsApp…')
+    return
+  }
+  navigator.clipboard
+    .writeText(share.message)
+    .then(() => {
+      onCopied?.()
+      toast.success('Check-in details copied to clipboard!')
+    })
+    .catch(() => toast.error('Could not copy to clipboard'))
+}
+
+function useRenderedCardPng(card: IssuedCard | null) {
+  const cardKey = card
+    ? `${card.memberCode}|${card.shortCode}|${card.credential}|${card.memberName ?? ''}`
+    : ''
+  const [rendered, setRendered] = useState<{
+    key: string
+    url: string
+    error: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!card) return
+    let active = true
+    renderCardPng(card)
+      .then((url) => {
+        if (active) setRendered({ key: cardKey, url, error: '' })
+      })
+      .catch(() => {
+        if (active) {
+          setRendered({
+            key: cardKey,
+            url: '',
+            error: 'Could not render the card in this browser.',
+          })
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [card, cardKey])
 
   return {
-    rawPhone,
-    message,
-    whatsappUrl: rawPhone
-      ? `https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`
-      : null,
+    preview: rendered?.key === cardKey ? rendered.url : '',
+    renderError: rendered?.key === cardKey ? rendered.error : '',
   }
 }
 
@@ -131,28 +169,21 @@ export function CardDownloads({
   card: IssuedCard
   onBack?: () => void
 }) {
-  const [preview, setPreview] = useState('')
-  const [renderError, setRenderError] = useState('')
+  const { preview, renderError } = useRenderedCardPng(card)
+  const [pdfError, setPdfError] = useState('')
   const [pdfBusy, setPdfBusy] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => {
-    let active = true
-    renderCardPng(card)
-      .then((dataUrl) => {
-        if (active) setPreview(dataUrl)
-      })
-      .catch(() => {
-        if (active) setRenderError('Could not render the card in this browser.')
-      })
-    return () => {
-      active = false
-    }
-  }, [card])
+  const share = buildWhatsAppShare({
+    memberCode: card.memberCode,
+    shortCode: card.shortCode,
+    memberName: card.memberName,
+    phone: card.phone,
+  })
 
   async function downloadPdf() {
     setPdfBusy(true)
-    setRenderError('')
+    setPdfError('')
     try {
       const bytes = await renderCardPdf(card)
       downloadBlob(
@@ -162,33 +193,20 @@ export function CardDownloads({
         `${card.memberCode}.pdf`
       )
     } catch {
-      setRenderError('Could not prepare the printable PDF. Try again.')
+      setPdfError('Could not prepare the printable PDF. Try again.')
     } finally {
       setPdfBusy(false)
     }
   }
 
-  function handleWhatsApp() {
-    const share = buildWhatsAppShare({
-      memberCode: card.memberCode,
-      shortCode: card.shortCode,
-      memberName: card.memberName,
-      phone: card.phone,
+  function handleShare() {
+    shareCardDetails(share, () => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
     })
-    if (share.whatsappUrl) {
-      window.open(share.whatsappUrl, '_blank', 'noopener,noreferrer')
-      toast.success('Opening WhatsApp…')
-    } else {
-      navigator.clipboard
-        .writeText(share.message)
-        .then(() => {
-          setCopied(true)
-          toast.success('Check-in details copied to clipboard!')
-          setTimeout(() => setCopied(false), 2500)
-        })
-        .catch(() => toast.error('Could not copy to clipboard'))
-    }
   }
+
+  const combinedError = pdfError || renderError
 
   return (
     <Card className='border-sky-500/45 bg-sky-50/30 dark:bg-sky-950/20'>
@@ -200,7 +218,7 @@ export function CardDownloads({
                 type='button'
                 variant='ghost'
                 size='sm'
-                className='h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground'
+                className='-ml-1 h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground'
                 onClick={onBack}
               >
                 <ArrowLeft className='size-3.5' />
@@ -209,79 +227,88 @@ export function CardDownloads({
             )}
             <CardTitle className='text-base'>
               Card ready · {card.memberCode}
+              {card.memberName ? ` (${card.memberName})` : ''}
             </CardTitle>
           </div>
-          <Badge variant='outline' className='font-mono'>
+          <Badge variant='outline' className='bg-background font-mono'>
             {card.shortCode}
           </Badge>
         </div>
         <CardDescription>
-          Save the image or print PDF now. For security, this QR code is shown
-          only once—if a card is lost, issue a replacement.
+          Download or print this badge now. For security, the full QR
+          credential is displayed only at issuance—if a card is lost, issue a
+          replacement.
         </CardDescription>
       </CardHeader>
-      <CardContent className='space-y-4'>
-        {preview ? (
-          <img
-            src={preview}
-            alt={`Attendance card for ${card.memberCode}`}
-            className='w-48 rounded-lg border bg-white shadow-xs'
-          />
-        ) : (
-          <div className='flex h-60 w-48 items-center justify-center rounded-lg border bg-background p-3 text-center text-sm text-muted-foreground'>
-            Preparing card…
-          </div>
-        )}
-        <div className='flex flex-wrap gap-2.5'>
-          <Button
-            type='button'
-            size='sm'
-            disabled={!preview}
-            onClick={() => downloadDataUrl(preview, `${card.memberCode}.png`)}
-          >
-            <Download className='size-4' />
-            Download PNG
-          </Button>
-          <Button
-            type='button'
-            size='sm'
-            variant='outline'
-            disabled={!preview || pdfBusy}
-            onClick={() => void downloadPdf()}
-          >
-            <FileText className='size-4' />
-            {pdfBusy ? 'Preparing PDF…' : 'Download printable PDF'}
-          </Button>
-          <Button
-            type='button'
-            size='sm'
-            variant='outline'
-            disabled={!preview}
-            onClick={() => void printCard(card)}
-          >
-            <Printer className='size-4' />
-            Print Card
-          </Button>
-          <Button
-            type='button'
-            size='sm'
-            variant='outline'
-            className='text-emerald-700 hover:text-emerald-800 dark:text-emerald-400'
-            onClick={handleWhatsApp}
-          >
-            {copied ? (
-              <Check className='size-4' />
-            ) : (
-              <MessageCircle className='size-4' />
+      <CardContent>
+        <div className='flex flex-col gap-5 sm:flex-row sm:items-start'>
+          {preview ? (
+            <img
+              src={preview}
+              alt={`Attendance card for ${card.memberCode}`}
+              className='w-44 shrink-0 rounded-lg border bg-white shadow-xs'
+            />
+          ) : (
+            <div className='flex h-56 w-44 shrink-0 items-center justify-center rounded-lg border bg-background p-3 text-center text-sm text-muted-foreground'>
+              Preparing card…
+            </div>
+          )}
+
+          <div className='flex flex-1 flex-col gap-3'>
+            <div className='flex flex-wrap gap-2'>
+              <Button
+                type='button'
+                size='sm'
+                disabled={!preview}
+                onClick={() => downloadDataUrl(preview, `${card.memberCode}.png`)}
+              >
+                <Download className='size-4' />
+                Download PNG
+              </Button>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                disabled={!preview || pdfBusy}
+                onClick={() => void downloadPdf()}
+              >
+                <FileText className='size-4' />
+                {pdfBusy ? 'Preparing PDF…' : 'Download printable PDF'}
+              </Button>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                disabled={!preview}
+                onClick={() => void printCard(card)}
+              >
+                <Printer className='size-4' />
+                Print card
+              </Button>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                className='text-emerald-700 hover:text-emerald-800 dark:text-emerald-400'
+                onClick={handleShare}
+              >
+                {copied ? (
+                  <Check className='size-4' />
+                ) : share.whatsappUrl ? (
+                  <MessageCircle className='size-4' />
+                ) : (
+                  <Copy className='size-4' />
+                )}
+                {share.whatsappUrl ? 'Send via WhatsApp' : 'Copy for WhatsApp'}
+              </Button>
+            </div>
+            {combinedError && (
+              <p role='alert' className='text-sm text-destructive'>
+                {combinedError}
+              </p>
             )}
-            {card.phone ? 'Send via WhatsApp' : 'Copy for WhatsApp'}
-          </Button>
+          </div>
         </div>
-        {renderError && (
-          <p role='alert' className='text-sm text-destructive'>
-            {renderError}
-          </p>
-        )}
       </CardContent>
     </Card>
   )
@@ -296,51 +323,40 @@ function CardPreviewModal({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const [preview, setPreview] = useState('')
+  const issuedObj: IssuedCard | null =
+    card && open
+      ? {
+          memberCode: card.member_code,
+          shortCode: card.short_code,
+          credential: card.short_code,
+          memberName: `${card.first_name} ${card.last_name}`,
+          phone: card.phone_e164 || card.phone,
+        }
+      : null
+
+  const { preview, renderError } = useRenderedCardPng(issuedObj)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => {
-    if (!card || !open) {
-      setPreview('')
-      return
-    }
-    let active = true
-    renderCardPng({
-      memberCode: card.member_code,
-      shortCode: card.short_code,
-      credential: card.short_code,
-      memberName: `${card.first_name} ${card.last_name}`,
-    })
-      .then((dataUrl) => {
-        if (active) setPreview(dataUrl)
-      })
-      .catch(() => {
-        if (active) toast.error('Could not render card preview.')
-      })
-    return () => {
-      active = false
-    }
-  }, [card, open])
+  if (!card || !issuedObj) return null
 
-  if (!card) return null
-  const currentCard = card
-
-  const issuedObj: IssuedCard = {
-    memberCode: currentCard.member_code,
-    shortCode: currentCard.short_code,
-    credential: currentCard.short_code,
-    memberName: `${currentCard.first_name} ${currentCard.last_name}`,
-    phone: currentCard.phone_e164 || currentCard.phone,
-  }
+  const share = buildWhatsAppShare({
+    first_name: card.first_name,
+    last_name: card.last_name,
+    member_code: card.member_code,
+    short_code: card.short_code,
+    phone_e164: card.phone_e164,
+    phone: card.phone,
+  })
 
   async function handleDownloadPdf() {
+    if (!issuedObj || !card) return
     setPdfBusy(true)
     try {
       const bytes = await renderCardPdf(issuedObj)
       downloadBlob(
         new Blob([Uint8Array.from(bytes).buffer], { type: 'application/pdf' }),
-        `${currentCard.member_code}.pdf`
+        `${card.member_code}.pdf`
       )
       toast.success('Printable PDF downloaded.')
     } catch {
@@ -350,77 +366,33 @@ function CardPreviewModal({
     }
   }
 
-  function handleWhatsApp() {
-    const share = buildWhatsAppShare({
-      first_name: currentCard.first_name,
-      last_name: currentCard.last_name,
-      member_code: currentCard.member_code,
-      short_code: currentCard.short_code,
-      phone_e164: currentCard.phone_e164,
-      phone: currentCard.phone,
+  function handleShare() {
+    shareCardDetails(share, () => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
     })
-
-    if (share.whatsappUrl) {
-      window.open(share.whatsappUrl, '_blank', 'noopener,noreferrer')
-      toast.success('Opening WhatsApp…')
-    } else {
-      navigator.clipboard
-        .writeText(share.message)
-        .then(() => {
-          setCopied(true)
-          toast.success('Check-in details copied to clipboard!')
-          setTimeout(() => setCopied(false), 2500)
-        })
-        .catch(() => toast.error('Could not copy to clipboard'))
-    }
   }
 
-  const formattedIssuedDate = card.issued_at
-    ? new Date(card.issued_at).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : null
-
-  const formattedLastScan = card.last_scanned_at
-    ? new Date(card.last_scanned_at).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-    : null
+  const formattedIssuedDate = formatShortDate(card.issued_at)
+  const formattedLastScan = formatShortDate(card.last_scanned_at, true)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-w-2xl'>
         <DialogHeader>
-          <div className='flex items-center justify-between gap-2 pb-1'>
-            <Button
-              type='button'
-              variant='ghost'
-              size='sm'
-              className='-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground'
-              onClick={() => onOpenChange(false)}
-            >
-              <ArrowLeft className='size-3.5' />
-              <span>Back to cards</span>
-            </Button>
+          <div className='flex items-center justify-between gap-2 pr-6'>
+            <DialogTitle>Member check-in card</DialogTitle>
             <Badge variant='outline' className='font-mono'>
-              {currentCard.short_code}
+              {card.short_code}
             </Badge>
           </div>
-          <DialogTitle>Member check-in card</DialogTitle>
           <DialogDescription>
-            {currentCard.first_name} {currentCard.last_name} ·{' '}
-            {currentCard.member_code}
+            {card.first_name} {card.last_name} · {card.member_code}
           </DialogDescription>
         </DialogHeader>
 
         <div className='grid gap-6 sm:grid-cols-2'>
-          <div className='flex flex-col items-center justify-center rounded-xl border bg-slate-50/60 p-4 dark:bg-slate-900/40'>
+          <div className='flex flex-col items-center justify-center gap-2.5 rounded-xl border bg-muted/25 p-4'>
             {preview ? (
               <img
                 src={preview}
@@ -428,71 +400,77 @@ function CardPreviewModal({
                 className='max-h-72 w-auto rounded-lg border bg-white shadow-sm'
               />
             ) : (
-              <div className='flex h-72 w-52 items-center justify-center rounded-lg border bg-background text-sm text-muted-foreground'>
-                Loading card preview…
+              <div className='flex h-72 w-52 items-center justify-center rounded-lg border bg-background p-3 text-center text-sm text-muted-foreground'>
+                {renderError || 'Loading card preview…'}
               </div>
             )}
+            <p className='text-center text-[11px] text-muted-foreground'>
+              Reprint preview encodes the backup shortcode QR. Issue a
+              replacement if a fresh primary QR credential is needed.
+            </p>
           </div>
 
-          <div className='flex flex-col justify-between space-y-4 text-sm'>
-            <div className='space-y-3 divide-y rounded-xl border bg-card p-4'>
-              <div className='flex items-center justify-between pb-2'>
-                <span className='text-muted-foreground'>Full name</span>
-                <span className='font-medium text-foreground'>
+          <div className='flex flex-col justify-between gap-4 text-sm'>
+            <dl className='divide-y rounded-xl border bg-card px-4 py-1'>
+              <div className='flex items-center justify-between gap-3 py-2.5'>
+                <dt className='text-muted-foreground'>Full name</dt>
+                <dd className='text-right font-medium text-foreground'>
                   {card.first_name} {card.last_name}
-                </span>
+                </dd>
               </div>
-              <div className='flex items-center justify-between py-2'>
-                <span className='text-muted-foreground'>Member code</span>
-                <span className='font-mono font-semibold'>
-                  {card.member_code}
-                </span>
+              <div className='flex items-center justify-between gap-3 py-2.5'>
+                <dt className='text-muted-foreground'>Member code</dt>
+                <dd className='font-mono font-semibold'>{card.member_code}</dd>
               </div>
-              <div className='flex items-center justify-between py-2'>
-                <span className='text-muted-foreground'>Shortcode</span>
-                <Badge variant='secondary' className='font-mono'>
-                  {card.short_code}
-                </Badge>
+              <div className='flex items-center justify-between gap-3 py-2.5'>
+                <dt className='text-muted-foreground'>Shortcode</dt>
+                <dd>
+                  <Badge variant='secondary' className='font-mono'>
+                    {card.short_code}
+                  </Badge>
+                </dd>
               </div>
-              <div className='flex items-center justify-between py-2'>
-                <span className='text-muted-foreground'>Lifecycle stage</span>
-                <Badge
-                  variant='outline'
-                  className={stageBadgeClass(card.lifecycle_stage || '')}
-                >
-                  {formatStage(card.lifecycle_stage || '')}
-                </Badge>
-              </div>
-              <div className='flex items-center justify-between py-2'>
-                <span className='text-muted-foreground'>Phone</span>
-                <span className='tabular-nums'>
-                  {card.phone || card.phone_e164 || 'None recorded'}
-                </span>
-              </div>
-              <div className='flex items-center justify-between py-2'>
-                <span className='text-muted-foreground'>Scan activity</span>
-                <span className='font-medium text-foreground'>
-                  {card.scan_count && card.scan_count > 0
-                    ? `${card.scan_count} check-ins`
-                    : 'No check-ins yet'}
-                </span>
-              </div>
-              {formattedLastScan && (
-                <div className='flex items-center justify-between py-2'>
-                  <span className='text-muted-foreground'>Last check-in</span>
-                  <span className='text-xs text-foreground tabular-nums'>
-                    {formattedLastScan}
-                  </span>
+              {card.lifecycle_stage && (
+                <div className='flex items-center justify-between gap-3 py-2.5'>
+                  <dt className='text-muted-foreground'>Stage</dt>
+                  <dd>
+                    <Badge
+                      variant='outline'
+                      className={stageBadgeClass(card.lifecycle_stage)}
+                    >
+                      {formatStage(card.lifecycle_stage)}
+                    </Badge>
+                  </dd>
                 </div>
               )}
-              <div className='flex items-center justify-between pt-2 text-xs text-muted-foreground'>
-                <span>Issued by</span>
-                <span>
-                  {card.issued_by_name || 'Staff'}{' '}
-                  {formattedIssuedDate ? `· ${formattedIssuedDate}` : ''}
-                </span>
+              <div className='flex items-center justify-between gap-3 py-2.5'>
+                <dt className='text-muted-foreground'>Phone</dt>
+                <dd className='tabular-nums'>
+                  {card.phone || card.phone_e164 || 'None recorded'}
+                </dd>
               </div>
-            </div>
+              <div className='flex items-center justify-between gap-3 py-2.5'>
+                <dt className='text-muted-foreground'>Check-ins</dt>
+                <dd className='font-medium tabular-nums'>
+                  {card.scan_count && card.scan_count > 0
+                    ? `${card.scan_count}`
+                    : '0'}
+                </dd>
+              </div>
+              {formattedLastScan && (
+                <div className='flex items-center justify-between gap-3 py-2.5'>
+                  <dt className='text-muted-foreground'>Last scan</dt>
+                  <dd className='text-xs tabular-nums'>{formattedLastScan}</dd>
+                </div>
+              )}
+              <div className='flex items-center justify-between gap-3 py-2.5 text-xs text-muted-foreground'>
+                <dt>Issued</dt>
+                <dd className='text-right'>
+                  {card.issued_by_name || 'Staff'}
+                  {formattedIssuedDate ? ` · ${formattedIssuedDate}` : ''}
+                </dd>
+              </div>
+            </dl>
 
             <div className='grid grid-cols-2 gap-2'>
               <Button
@@ -531,20 +509,22 @@ function CardPreviewModal({
                 size='sm'
                 variant='outline'
                 className='text-emerald-700 hover:text-emerald-800 dark:text-emerald-400'
-                onClick={handleWhatsApp}
+                onClick={handleShare}
               >
                 {copied ? (
                   <Check className='size-3.5' />
-                ) : (
+                ) : share.whatsappUrl ? (
                   <MessageCircle className='size-3.5' />
+                ) : (
+                  <Copy className='size-3.5' />
                 )}
-                WhatsApp
+                {share.whatsappUrl ? 'WhatsApp' : 'Copy'}
               </Button>
             </div>
           </div>
         </div>
 
-        <DialogFooter className='mt-2 flex items-center justify-between sm:justify-between'>
+        <DialogFooter className='sm:justify-start'>
           <Button
             type='button'
             variant='outline'
@@ -554,9 +534,6 @@ function CardPreviewModal({
             <ArrowLeft className='size-3.5' />
             <span>Back to cards</span>
           </Button>
-          <Button type='button' onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -565,11 +542,14 @@ function CardPreviewModal({
 
 export function CardsPage() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState('active')
+  const [activeTab, setActiveTab] = useState<'active' | 'unissued'>('active')
   const [personSearch, setPersonSearch] = useState('')
   const [search, setSearch] = useState('')
   const [unissuedSearch, setUnissuedSearch] = useState('')
   const [issued, setIssued] = useState<IssuedCard | null>(null)
+  const [issuingPersonId, setIssuingPersonId] = useState<string | null>(null)
+  const [replaceTarget, setReplaceTarget] =
+    useState<ReplacePromptTarget | null>(null)
   const [revokeTarget, setRevokeTarget] = useState<ActiveCard | null>(null)
   const [previewTarget, setPreviewTarget] = useState<ActiveCard | null>(null)
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set())
@@ -577,8 +557,8 @@ export function CardsPage() {
 
   const trimmedPersonSearch = personSearch.trim()
   const debouncedPersonSearch = useDebouncedValue(trimmedPersonSearch)
-  const debouncedCardSearch = useDebouncedValue(search)
-  const debouncedUnissuedSearch = useDebouncedValue(unissuedSearch)
+  const debouncedCardSearch = useDebouncedValue(search.trim())
+  const debouncedUnissuedSearch = useDebouncedValue(unissuedSearch.trim())
 
   const matchingPeople = useQuery({
     queryKey: ['people', 'card-issue', debouncedPersonSearch],
@@ -598,29 +578,41 @@ export function CardsPage() {
   })
 
   const issue = useMutation({
-    mutationFn: (id: string) =>
-      api<{ card: IssuedCard }>(`/api/v1/people/${id}/cards`, {
+    mutationFn: (id: string) => {
+      setIssuingPersonId(id)
+      return api<{ card: IssuedCard }>(`/api/v1/people/${id}/cards`, {
         method: 'POST',
         body: '{}',
-      }),
+      })
+    },
     onSuccess: async ({ card }) => {
       setIssued(card)
       setPersonSearch('')
-      toast.success(`Check-in card generated for ${card.memberCode}`)
+      setReplaceTarget(null)
+      toast.success(`Check-in card ready for ${card.memberCode}`)
       await queryClient.invalidateQueries({ queryKey: ['cards'] })
     },
     onError: (err) => {
       toast.error(err.message || 'Failed to issue card')
+    },
+    onSettled: () => {
+      setIssuingPersonId(null)
     },
   })
 
   const revoke = useMutation({
     mutationFn: (id: string) =>
       api(`/api/v1/cards/${id}/revoke`, { method: 'POST', body: '{}' }),
-    onSuccess: async () => {
+    onSuccess: async (_, id) => {
       setIssued(null)
       setRevokeTarget(null)
-      toast.success('Card revoked successfully')
+      setSelectedCards((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      toast.success('Card revoked')
       await queryClient.invalidateQueries({ queryKey: ['cards'] })
     },
     onError: (err) => {
@@ -632,7 +624,17 @@ export function CardsPage() {
   const allActiveCards = cardsQuery.data?.cards ?? []
   const allUnissued = cardsQuery.data?.unissued ?? []
 
-  // Filter unissued by search term
+  const activeCardByPersonId = new Map(
+    allActiveCards.map((card) => [card.person_id, card] as const)
+  )
+  const visibleCardIds = new Set(allActiveCards.map((card) => card.id))
+  const visibleSelectedCards = allActiveCards.filter((card) =>
+    selectedCards.has(card.id)
+  )
+  const allVisibleSelected =
+    allActiveCards.length > 0 &&
+    visibleSelectedCards.length === allActiveCards.length
+
   const filteredUnissued = debouncedUnissuedSearch
     ? allUnissued.filter((person) => {
         const query = debouncedUnissuedSearch.toLowerCase()
@@ -655,18 +657,24 @@ export function CardsPage() {
   }
 
   function toggleSelectAll() {
-    if (selectedCards.size === allActiveCards.length) {
-      setSelectedCards(new Set())
+    if (allVisibleSelected) {
+      setSelectedCards((prev) => {
+        const next = new Set(prev)
+        for (const id of visibleCardIds) next.delete(id)
+        return next
+      })
     } else {
-      setSelectedCards(new Set(allActiveCards.map((c) => c.id)))
+      setSelectedCards((prev) => {
+        const next = new Set(prev)
+        for (const id of visibleCardIds) next.add(id)
+        return next
+      })
     }
   }
 
   async function handleBatchPdf() {
     const targetCards =
-      selectedCards.size > 0
-        ? allActiveCards.filter((c) => selectedCards.has(c.id))
-        : allActiveCards
+      visibleSelectedCards.length > 0 ? visibleSelectedCards : allActiveCards
 
     if (!targetCards.length) {
       toast.error('No active cards to print.')
@@ -688,7 +696,9 @@ export function CardsPage() {
         `grace-arena-cards-batch-${targetCards.length}.pdf`
       )
       toast.success(
-        `Generated A4 batch sheet with ${targetCards.length} cards and cut lines.`
+        `Generated A4 batch sheet with ${targetCards.length} ${
+          targetCards.length === 1 ? 'card' : 'cards'
+        }.`
       )
     } catch {
       toast.error('Could not generate the batch printable sheet.')
@@ -700,23 +710,9 @@ export function CardsPage() {
   return (
     <ChurchPage
       title='Member cards'
-      description='Issue new check-in cards, preview & print badges, share via WhatsApp, or manage card credentials.'
+      description='Issue check-in cards, print badges or A4 sheets, and manage active credentials.'
     >
       <div className='max-w-4xl space-y-6'>
-        <div className='flex items-center gap-2'>
-          <Button
-            variant='ghost'
-            size='sm'
-            asChild
-            className='-ml-2 h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground'
-          >
-            <Link to='/dashboard'>
-              <ArrowLeft className='size-3.5' />
-              <span>Back to dashboard</span>
-            </Link>
-          </Button>
-        </div>
-
         {mutationError && (
           <div
             role='alert'
@@ -735,11 +731,11 @@ export function CardsPage() {
         )}
 
         <Card>
-          <CardHeader>
+          <CardHeader className='pb-4'>
             <CardTitle>Issue or replace a card</CardTitle>
             <CardDescription>
-              Search by name or member code. Issuing a new card automatically
-              deactivates any previous card for that person.
+              Search by name or member code. Replacing an active card
+              deactivates the previous credential immediately.
             </CardDescription>
           </CardHeader>
           <CardContent className='space-y-4'>
@@ -784,40 +780,75 @@ export function CardsPage() {
                   matchingPeople.data &&
                   matchingPeople.data.people.length > 0 && (
                     <div className='divide-y rounded-xl border'>
-                      {matchingPeople.data.people.slice(0, 6).map((person) => (
-                        <div
-                          key={person.id}
-                          className='flex flex-wrap items-center justify-between gap-3 px-4 py-3'
-                        >
-                          <div className='flex flex-wrap items-center gap-2.5'>
-                            <span className='text-sm font-medium'>
-                              {person.first_name} {person.last_name}
-                            </span>
-                            <Badge variant='outline' className='font-mono'>
-                              {person.member_code}
-                            </Badge>
-                            <Badge
-                              variant='outline'
-                              className={stageBadgeClass(
-                                person.lifecycle_stage
-                              )}
-                            >
-                              {formatStage(person.lifecycle_stage)}
-                            </Badge>
-                          </div>
-                          <Button
-                            size='sm'
-                            disabled={issue.isPending}
-                            onClick={() => {
-                              setIssued(null)
-                              issue.mutate(person.id)
-                            }}
+                      {matchingPeople.data.people.slice(0, 6).map((person) => {
+                        const existingCard = activeCardByPersonId.get(
+                          person.id
+                        )
+                        const isIssuingThis =
+                          issue.isPending && issuingPersonId === person.id
+                        const isInactive =
+                          person.lifecycle_stage === 'INACTIVE' ||
+                          person.lifecycle_stage === 'ARCHIVED'
+
+                        return (
+                          <div
+                            key={person.id}
+                            className='flex flex-wrap items-center justify-between gap-3 px-4 py-3'
                           >
-                            <CreditCard className='size-4' />
-                            {issue.isPending ? 'Issuing…' : 'Issue card'}
-                          </Button>
-                        </div>
-                      ))}
+                            <div className='flex flex-wrap items-center gap-2'>
+                              <span className='text-sm font-medium'>
+                                {person.first_name} {person.last_name}
+                              </span>
+                              <Badge variant='outline' className='font-mono'>
+                                {person.member_code}
+                              </Badge>
+                              <Badge
+                                variant='outline'
+                                className={stageBadgeClass(
+                                  person.lifecycle_stage
+                                )}
+                              >
+                                {formatStage(person.lifecycle_stage)}
+                              </Badge>
+                              {existingCard && (
+                                <span className='font-mono text-xs text-muted-foreground'>
+                                  Active · {existingCard.short_code}
+                                </span>
+                              )}
+                            </div>
+                            {existingCard ? (
+                              <Button
+                                size='sm'
+                                variant='outline'
+                                disabled={issue.isPending || isInactive}
+                                onClick={() =>
+                                  setReplaceTarget({
+                                    personId: person.id,
+                                    name: `${person.first_name} ${person.last_name}`,
+                                    memberCode: person.member_code,
+                                    shortCode: existingCard.short_code,
+                                  })
+                                }
+                              >
+                                <RefreshCw className='size-3.5' />
+                                {isIssuingThis ? 'Replacing…' : 'Replace card'}
+                              </Button>
+                            ) : (
+                              <Button
+                                size='sm'
+                                disabled={issue.isPending || isInactive}
+                                onClick={() => {
+                                  setIssued(null)
+                                  issue.mutate(person.id)
+                                }}
+                              >
+                                <CreditCard className='size-4' />
+                                {isIssuingThis ? 'Issuing…' : 'Issue card'}
+                              </Button>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
               </div>
@@ -827,9 +858,15 @@ export function CardsPage() {
 
         <div className='space-y-4'>
           <div className='flex flex-wrap items-center justify-between gap-3'>
-            <div className='inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground'>
+            <div
+              role='tablist'
+              aria-label='Card views'
+              className='inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground'
+            >
               <button
                 type='button'
+                role='tab'
+                aria-selected={activeTab === 'active'}
                 onClick={() => setActiveTab('active')}
                 className={`inline-flex items-center gap-2 rounded-md px-3 py-1 text-sm font-medium transition-all ${
                   activeTab === 'active'
@@ -839,12 +876,14 @@ export function CardsPage() {
               >
                 <CreditCard className='size-4' />
                 <span>Active cards</span>
-                <Badge variant='secondary' className='ml-1 px-1.5 py-0 text-xs'>
+                <Badge variant='secondary' className='px-1.5 py-0 text-xs tabular-nums'>
                   {allActiveCards.length}
                 </Badge>
               </button>
               <button
                 type='button'
+                role='tab'
+                aria-selected={activeTab === 'unissued'}
                 onClick={() => setActiveTab('unissued')}
                 className={`inline-flex items-center gap-2 rounded-md px-3 py-1 text-sm font-medium transition-all ${
                   activeTab === 'unissued'
@@ -857,7 +896,7 @@ export function CardsPage() {
                 {allUnissued.length > 0 && (
                   <Badge
                     variant='outline'
-                    className='ml-1 bg-amber-50 px-1.5 py-0 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                    className='bg-amber-50 px-1.5 py-0 text-xs text-amber-700 tabular-nums dark:bg-amber-950/40 dark:text-amber-300'
                   >
                     {allUnissued.length}
                   </Badge>
@@ -867,7 +906,19 @@ export function CardsPage() {
 
             {activeTab === 'active' && allActiveCards.length > 0 && (
               <div className='flex items-center gap-2'>
+                {visibleSelectedCards.length > 0 && (
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    className='text-xs text-muted-foreground'
+                    onClick={() => setSelectedCards(new Set())}
+                  >
+                    Clear ({visibleSelectedCards.length})
+                  </Button>
+                )}
                 <Button
+                  type='button'
                   variant='outline'
                   size='sm'
                   disabled={batchPdfBusy}
@@ -876,8 +927,8 @@ export function CardsPage() {
                   <FileText className='size-4' />
                   {batchPdfBusy
                     ? 'Preparing A4 sheet…'
-                    : selectedCards.size > 0
-                      ? `Print A4 sheet (${selectedCards.size})`
+                    : visibleSelectedCards.length > 0
+                      ? `Print A4 sheet (${visibleSelectedCards.length})`
                       : `Print all to A4 (${allActiveCards.length})`}
                 </Button>
               </div>
@@ -887,20 +938,6 @@ export function CardsPage() {
           {activeTab === 'active' && (
             <Card>
               <CardHeader className='space-y-3 pb-3'>
-                <div className='flex flex-wrap items-center justify-between gap-2'>
-                  <div>
-                    <CardTitle>Active cards</CardTitle>
-                    <CardDescription>
-                      Currently valid check-in cards across registered members
-                      and visitors.
-                    </CardDescription>
-                  </div>
-                  {search === debouncedCardSearch && (
-                    <Badge variant='secondary'>
-                      {allActiveCards.length} active
-                    </Badge>
-                  )}
-                </div>
                 <div className='flex flex-wrap items-center justify-between gap-3'>
                   <div className='relative max-w-md flex-1'>
                     <Search
@@ -909,21 +946,23 @@ export function CardsPage() {
                     />
                     <Input
                       id='card-search'
+                      aria-label='Filter active cards'
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder='Filter active cards by name, member code, or shortcode'
+                      placeholder='Filter by name, member code, or shortcode'
                       className='pl-9'
                     />
                   </div>
 
                   {allActiveCards.length > 0 && (
                     <Button
+                      type='button'
                       variant='ghost'
                       size='sm'
                       onClick={toggleSelectAll}
                       className='text-xs text-muted-foreground'
                     >
-                      {selectedCards.size === allActiveCards.length ? (
+                      {allVisibleSelected ? (
                         <>
                           <CheckSquare className='mr-1.5 size-3.5' />
                           Deselect all
@@ -941,23 +980,24 @@ export function CardsPage() {
               <CardContent>
                 <QueryState
                   loading={
-                    search !== debouncedCardSearch || cardsQuery.isPending
+                    search.trim() !== debouncedCardSearch ||
+                    cardsQuery.isPending
                   }
                   error={cardsQuery.error}
                   empty={allActiveCards.length === 0}
                   emptyTitle={
                     search.trim()
                       ? 'No matching active cards'
-                      : 'No active cards'
+                      : 'No active cards yet'
                   }
                   emptyDescription={
                     search.trim()
-                      ? 'Try another name or member code.'
+                      ? 'Try another name, member code, or shortcode.'
                       : 'Issued check-in cards will appear here.'
                   }
                   onRetry={() => void cardsQuery.refetch()}
                 />
-                {search === debouncedCardSearch &&
+                {search.trim() === debouncedCardSearch &&
                   allActiveCards.length > 0 && (
                     <div className='divide-y rounded-xl border'>
                       {allActiveCards.map((card) => {
@@ -970,17 +1010,18 @@ export function CardsPage() {
                           phone_e164: card.phone_e164,
                           phone: card.phone,
                         })
+                        const issuedDate = formatShortDate(card.issued_at)
 
                         return (
                           <div
                             key={card.id}
-                            className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 transition-colors ${
+                            className={`flex items-center justify-between gap-3 px-4 py-3 transition-colors ${
                               isSelected
                                 ? 'bg-sky-50/50 dark:bg-sky-950/20'
-                                : 'hover:bg-muted/40'
+                                : 'hover:bg-muted/35'
                             }`}
                           >
-                            <div className='flex items-center gap-3'>
+                            <div className='flex min-w-0 items-center gap-3'>
                               <Checkbox
                                 checked={isSelected}
                                 onCheckedChange={() =>
@@ -988,9 +1029,9 @@ export function CardsPage() {
                                 }
                                 aria-label={`Select ${card.first_name} ${card.last_name}`}
                               />
-                              <div className='space-y-1'>
+                              <div className='min-w-0 space-y-1'>
                                 <div className='flex flex-wrap items-center gap-2'>
-                                  <p className='text-sm font-semibold text-foreground'>
+                                  <p className='truncate text-sm font-semibold text-foreground'>
                                     {card.first_name} {card.last_name}
                                   </p>
                                   {card.lifecycle_stage && (
@@ -1004,7 +1045,7 @@ export function CardsPage() {
                                     </Badge>
                                   )}
                                 </div>
-                                <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
+                                <div className='flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground'>
                                   <span className='font-mono font-medium'>
                                     {card.member_code}
                                   </span>
@@ -1012,28 +1053,17 @@ export function CardsPage() {
                                   <span className='rounded bg-muted px-1.5 py-0.5 font-mono font-semibold text-foreground'>
                                     {card.short_code}
                                   </span>
-                                  {card.issued_at && (
+                                  {issuedDate && (
                                     <>
                                       <span>·</span>
-                                      <span>
-                                        Issued{' '}
-                                        {new Date(
-                                          card.issued_at
-                                        ).toLocaleDateString(undefined, {
-                                          month: 'short',
-                                          day: 'numeric',
-                                          year: 'numeric',
-                                        })}
-                                      </span>
+                                      <span>Issued {issuedDate}</span>
                                     </>
                                   )}
                                   {card.scan_count !== undefined && (
                                     <>
                                       <span>·</span>
-                                      <span className='font-medium text-foreground'>
-                                        {card.scan_count > 0
-                                          ? `${card.scan_count} check-ins`
-                                          : '0 check-ins'}
+                                      <span className='tabular-nums'>
+                                        {card.scan_count} check-ins
                                       </span>
                                     </>
                                   )}
@@ -1041,77 +1071,77 @@ export function CardsPage() {
                               </div>
                             </div>
 
-                            <div className='flex flex-wrap items-center gap-1.5'>
+                            <div className='flex shrink-0 items-center gap-1.5'>
                               <Button
+                                type='button'
                                 variant='outline'
                                 size='sm'
                                 onClick={() => setPreviewTarget(card)}
-                                title='View card'
                               >
                                 <Eye className='size-3.5' />
                                 View
                               </Button>
 
                               <Button
+                                type='button'
                                 variant='outline'
                                 size='sm'
                                 className='text-emerald-700 hover:text-emerald-800 dark:text-emerald-400'
-                                title='Send via WhatsApp'
-                                onClick={() => {
-                                  if (share.whatsappUrl) {
-                                    window.open(
-                                      share.whatsappUrl,
-                                      '_blank',
-                                      'noopener,noreferrer'
-                                    )
-                                    toast.success('Opening WhatsApp…')
-                                  } else {
-                                    navigator.clipboard
-                                      .writeText(share.message)
-                                      .then(() =>
-                                        toast.success(
-                                          'Check-in details copied to clipboard!'
-                                        )
-                                      )
-                                      .catch(() =>
-                                        toast.error(
-                                          'Could not copy to clipboard'
-                                        )
-                                      )
-                                  }
-                                }}
+                                aria-label={
+                                  share.whatsappUrl
+                                    ? `Send ${card.first_name} ${card.last_name} card via WhatsApp`
+                                    : `Copy ${card.first_name} ${card.last_name} card details`
+                                }
+                                onClick={() => shareCardDetails(share)}
                               >
-                                <MessageCircle className='size-3.5' />
+                                {share.whatsappUrl ? (
+                                  <MessageCircle className='size-3.5' />
+                                ) : (
+                                  <Copy className='size-3.5' />
+                                )}
                                 <span className='hidden sm:inline'>
-                                  WhatsApp
+                                  {share.whatsappUrl ? 'WhatsApp' : 'Copy'}
                                 </span>
                               </Button>
 
-                              <Button
-                                variant='outline'
-                                size='sm'
-                                disabled={issue.isPending}
-                                onClick={() => {
-                                  setIssued(null)
-                                  issue.mutate(card.person_id)
-                                }}
-                                title='Replace card'
-                              >
-                                <RefreshCw className='size-3.5' />
-                                Replace
-                              </Button>
-
-                              <Button
-                                variant='outline'
-                                size='sm'
-                                className='text-destructive hover:bg-destructive/10 hover:text-destructive'
-                                disabled={revoke.isPending}
-                                onClick={() => setRevokeTarget(card)}
-                                title='Revoke card'
-                              >
-                                <ShieldX className='size-3.5' />
-                                Revoke
-                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type='button'
+                                    variant='ghost'
+                                    size='icon'
+                                    className='size-8'
+                                    aria-label={`More actions for ${card.first_name} ${card.last_name}`}
+                                  >
+                                    <MoreHorizontal className='size-4' />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align='end'>
+                                  <DropdownMenuItem
+                                    disabled={issue.isPending}
+                                    onSelect={() =>
+                                      setReplaceTarget({
+                                        personId: card.person_id,
+                                        name: `${card.first_name} ${card.last_name}`,
+                                        memberCode: card.member_code,
+                                        shortCode: card.short_code,
+                                      })
+                                    }
+                                  >
+                                    <RefreshCw className='size-4' />
+                                    Replace card
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    variant='destructive'
+                                    disabled={revoke.isPending}
+                                    onSelect={() => setRevokeTarget(card)}
+                                  >
+                                    <ShieldX className='size-4' />
+                                    Revoke card
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
                         )
@@ -1127,13 +1157,13 @@ export function CardsPage() {
               <CardHeader className='space-y-3 pb-3'>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
                   <div>
-                    <CardTitle>Unissued members</CardTitle>
+                    <CardTitle>Needs a card</CardTitle>
                     <CardDescription>
-                      Registered members and first-timers who do not have an
-                      active check-in card yet. Issue a card with 1 click.
+                      Active members and visitors who do not have a check-in
+                      card yet.
                     </CardDescription>
                   </div>
-                  <Badge variant='outline'>
+                  <Badge variant='outline' className='tabular-nums'>
                     {filteredUnissued.length} waiting
                   </Badge>
                 </div>
@@ -1143,9 +1173,10 @@ export function CardsPage() {
                     aria-hidden='true'
                   />
                   <Input
+                    aria-label='Filter unissued members'
                     value={unissuedSearch}
                     onChange={(event) => setUnissuedSearch(event.target.value)}
-                    placeholder='Filter unissued by name or member code'
+                    placeholder='Filter by name or member code'
                     className='pl-9'
                   />
                 </div>
@@ -1162,73 +1193,72 @@ export function CardsPage() {
                     <p className='mt-1 text-sm text-muted-foreground'>
                       {unissuedSearch.trim()
                         ? 'Try clearing the search filter.'
-                        : 'When new members or first-timers register, they will appear here until a card is issued.'}
+                        : 'Newly registered members and first-timers appear here until a card is issued.'}
                     </p>
                   </div>
                 ) : (
                   <div className='divide-y rounded-xl border'>
-                    {filteredUnissued.map((person) => (
-                      <div
-                        key={person.id}
-                        className='flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30'
-                      >
-                        <div className='space-y-1'>
-                          <div className='flex flex-wrap items-center gap-2'>
-                            <span className='text-sm font-semibold text-foreground'>
-                              {person.first_name} {person.last_name}
-                            </span>
-                            <Badge
-                              variant='outline'
-                              className={stageBadgeClass(
-                                person.lifecycle_stage
-                              )}
-                            >
-                              {formatStage(person.lifecycle_stage)}
-                            </Badge>
-                          </div>
-                          <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
-                            <span className='font-mono font-medium'>
-                              {person.member_code}
-                            </span>
-                            {person.phone && (
-                              <>
-                                <span>·</span>
-                                <span className='tabular-nums'>
-                                  {person.phone}
-                                </span>
-                              </>
-                            )}
-                            {person.registered_at && (
-                              <>
-                                <span>·</span>
-                                <span>
-                                  Registered{' '}
-                                  {new Date(
-                                    person.registered_at
-                                  ).toLocaleDateString(undefined, {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                  })}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        <Button
-                          size='sm'
-                          disabled={issue.isPending}
-                          onClick={() => {
-                            setIssued(null)
-                            issue.mutate(person.id)
-                          }}
+                    {filteredUnissued.map((person) => {
+                      const isIssuingThis =
+                        issue.isPending && issuingPersonId === person.id
+                      const registeredDate = formatShortDate(
+                        person.registered_at
+                      )
+                      return (
+                        <div
+                          key={person.id}
+                          className='flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/35'
                         >
-                          <CreditCard className='size-3.5' />
-                          {issue.isPending ? 'Issuing…' : 'Issue card'}
-                        </Button>
-                      </div>
-                    ))}
+                          <div className='space-y-1'>
+                            <div className='flex flex-wrap items-center gap-2'>
+                              <span className='text-sm font-semibold text-foreground'>
+                                {person.first_name} {person.last_name}
+                              </span>
+                              <Badge
+                                variant='outline'
+                                className={stageBadgeClass(
+                                  person.lifecycle_stage
+                                )}
+                              >
+                                {formatStage(person.lifecycle_stage)}
+                              </Badge>
+                            </div>
+                            <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
+                              <span className='font-mono font-medium'>
+                                {person.member_code}
+                              </span>
+                              {person.phone && (
+                                <>
+                                  <span>·</span>
+                                  <span className='tabular-nums'>
+                                    {person.phone}
+                                  </span>
+                                </>
+                              )}
+                              {registeredDate && (
+                                <>
+                                  <span>·</span>
+                                  <span>Registered {registeredDate}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <Button
+                            type='button'
+                            size='sm'
+                            disabled={issue.isPending}
+                            onClick={() => {
+                              setIssued(null)
+                              issue.mutate(person.id)
+                            }}
+                          >
+                            <CreditCard className='size-3.5' />
+                            {isIssuingThis ? 'Issuing…' : 'Issue card'}
+                          </Button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -1242,6 +1272,35 @@ export function CardsPage() {
         open={!!previewTarget}
         onOpenChange={(open) => {
           if (!open) setPreviewTarget(null)
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!replaceTarget}
+        onOpenChange={(open) => {
+          if (!open) setReplaceTarget(null)
+        }}
+        isLoading={issue.isPending}
+        title={
+          replaceTarget
+            ? `Replace card for ${replaceTarget.name}?`
+            : 'Replace card?'
+        }
+        desc={
+          replaceTarget
+            ? `A new QR credential and shortcode will be generated for ${replaceTarget.memberCode}.${
+                replaceTarget.shortCode
+                  ? ` Their current card (${replaceTarget.shortCode}) will stop working immediately.`
+                  : ''
+              }`
+            : ''
+        }
+        confirmText='Replace card'
+        handleConfirm={() => {
+          if (replaceTarget) {
+            setIssued(null)
+            issue.mutate(replaceTarget.personId)
+          }
         }}
       />
 

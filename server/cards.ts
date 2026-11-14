@@ -31,13 +31,26 @@ export async function issueCard(
   try {
     await client.query('BEGIN')
     const result = await client.query(
-      'SELECT id,member_code FROM people WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
+      'SELECT id,member_code,first_name,last_name,phone_e164,lifecycle_stage FROM people WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',
       [personId]
     )
     const person = result.rows[0] as
-      | { id: string; member_code: string }
+      | {
+          id: string
+          member_code: string
+          first_name?: string | null
+          last_name?: string | null
+          phone_e164?: string | null
+          lifecycle_stage?: string | null
+        }
       | undefined
     if (!person) throw new Error('Person not found')
+    if (
+      person.lifecycle_stage === 'ARCHIVED' ||
+      person.lifecycle_stage === 'INACTIVE'
+    ) {
+      throw new Error('Cannot issue a card for an inactive or archived profile')
+    }
     if (!allowReplacement) {
       const existing = await client.query(
         "SELECT id FROM qr_cards WHERE person_id=$1 AND status='ACTIVE'",
@@ -77,10 +90,15 @@ export async function issueCard(
       [staffId, personId]
     )
     await client.query('COMMIT')
+    const memberName = [person.first_name, person.last_name]
+      .filter((part): part is string => Boolean(part && part.trim()))
+      .join(' ')
     return {
       memberCode: person.member_code,
       shortCode: issuedShortCode,
       credential: credential.uri,
+      ...(memberName ? { memberName } : {}),
+      ...(person.phone_e164 ? { phone: person.phone_e164 } : {}),
     }
   } catch (error) {
     await client.query('ROLLBACK')
@@ -142,7 +160,7 @@ export async function listUnissuedPeople(
     `SELECT p.id, p.member_code, p.first_name, p.last_name, p.lifecycle_stage, p.phone_e164, p.registered_at
      FROM people p
      WHERE p.deleted_at IS NULL
-       AND p.lifecycle_stage NOT IN ('ARCHIVED')
+       AND p.lifecycle_stage NOT IN ('ARCHIVED', 'INACTIVE')
        AND NOT EXISTS (
          SELECT 1 FROM qr_cards c WHERE c.person_id=p.id AND c.status='ACTIVE'
        )

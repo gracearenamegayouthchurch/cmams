@@ -41,7 +41,7 @@ it('never selects a token digest in staff card listings', async () => {
   expect(statement).not.toContain('token_hash')
 })
 
-it('queries people without active cards for the unissued list', async () => {
+it('queries active non-archived people without active cards for the unissued list', async () => {
   let statement = ''
   await listUnissuedPeople(
     {
@@ -53,6 +53,7 @@ it('queries people without active cards for the unissued list', async () => {
     ''
   )
   expect(statement).toContain('NOT EXISTS')
+  expect(statement).toContain("'INACTIVE'")
   expect(statement).not.toContain('token_hash')
 })
 
@@ -125,4 +126,46 @@ it('retries with a fresh short code when a short code is already taken', async (
   expect(inserts).toHaveLength(2)
   expect(result.shortCode).toBe(inserts[1][2])
   expect(result.credential).toMatch(/^cma:\/\/v1\/[a-zA-Z0-9_-]{22}$/)
+})
+
+it('refuses to issue a card for an inactive or archived profile and returns memberName when present', async () => {
+  const inactiveClient = {
+    query: async (sql: string) => ({
+      rows: sql.includes('FROM people')
+        ? [{ id: 'person', member_code: 'CM-1001', lifecycle_stage: 'INACTIVE' }]
+        : [],
+    }),
+    release: () => {},
+  }
+  await expect(
+    issueCard({ connect: async () => inactiveClient } as never, 'person', 'staff')
+  ).rejects.toThrow('inactive or archived')
+
+  const activeClient = {
+    query: async (sql: string) => {
+      if (sql.includes('FROM people'))
+        return {
+          rows: [
+            {
+              id: 'person',
+              member_code: 'CM-1009',
+              first_name: 'Chidi',
+              last_name: 'Nwosu',
+              phone_e164: '+2348031234567',
+              lifecycle_stage: 'MEMBER',
+            },
+          ],
+        }
+      if (sql.includes('INSERT INTO qr_cards')) return { rows: [{ id: 'card' }] }
+      return { rows: [] }
+    },
+    release: () => {},
+  }
+  const issued = await issueCard(
+    { connect: async () => activeClient } as never,
+    'person',
+    'staff'
+  )
+  expect(issued.memberName).toBe('Chidi Nwosu')
+  expect(issued.phone).toBe('+2348031234567')
 })

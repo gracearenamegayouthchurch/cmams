@@ -394,10 +394,20 @@ export async function handleApi(request: Request): Promise<Response> {
         )).rows[0] as { id: string; short_code: string } | undefined
 
         let cardShortCode = activeCard?.short_code
+        let issuedCardDetails:
+          | {
+              memberCode: string
+              shortCode: string
+              credential: string
+              memberName?: string
+              phone?: string
+            }
+          | undefined
         if (!activeCard) {
           try {
             const issued = await issueCard(getDb(), personId as string, staff.id, true)
             cardShortCode = issued.shortCode
+            issuedCardDetails = issued
           } catch {
             // Card issuance non-fatal if card already exists
           }
@@ -410,7 +420,7 @@ export async function handleApi(request: Request): Promise<Response> {
         )
 
         await client.query('COMMIT')
-        return json({ ok: true, personId, cardShortCode })
+        return json({ ok: true, personId, cardShortCode, ...(issuedCardDetails ? { card: issuedCardDetails } : {}) })
       } catch (err) {
         await client.query('ROLLBACK')
         throw err
@@ -437,7 +447,7 @@ export async function handleApi(request: Request): Promise<Response> {
         return json({ error: 'Action not permitted' }, 403)
       return json({
         cards: await listActiveCards(getDb(), url.searchParams.get('q') ?? ''),
-        unissued: await listUnissuedPeople(getDb(), url.searchParams.get('q') ?? ''),
+        unissued: await listUnissuedPeople(getDb(), url.searchParams.get('uq') ?? ''),
       })
     }
     if (path === '/api/v1/dashboard' && method === 'GET') {
@@ -634,17 +644,21 @@ export async function handleApi(request: Request): Promise<Response> {
     if (issueMatch && method === 'POST') {
       if (!allow(staff.role, 'cards') && staff.role !== 'REGISTRATION_DESK')
         return json({ error: 'Action not permitted' }, 403)
-      return json(
-        {
-          card: await issueCard(
-            getDb(),
-            z.uuid().parse(issueMatch[1]),
-            staff.id,
-            staff.role !== 'REGISTRATION_DESK'
-          ),
-        },
-        201
+      const issued = await issueCard(
+        getDb(),
+        z.uuid().parse(issueMatch[1]),
+        staff.id,
+        staff.role !== 'REGISTRATION_DESK'
       )
+      const safeCard = allow(staff.role, 'cards')
+        ? issued
+        : {
+            memberCode: issued.memberCode,
+            shortCode: issued.shortCode,
+            credential: issued.credential,
+            ...(issued.memberName ? { memberName: issued.memberName } : {}),
+          }
+      return json({ card: safeCard }, 201)
     }
     const attendanceMatch = path.match(
       /^\/api\/v1\/people\/([0-9a-f-]{36})\/attendance$/i

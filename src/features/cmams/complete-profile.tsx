@@ -142,6 +142,7 @@ export function CompleteProfilePage() {
         ok: boolean
         personId: string
         cardShortCode?: string
+        card?: IssuedCard
       }>('/api/v1/profile', {
         method: 'POST',
         body: JSON.stringify({
@@ -157,12 +158,18 @@ export function CompleteProfilePage() {
         }),
       })
 
-      if (res.cardShortCode) {
+      if (res.card) {
+        setIssuedCard({
+          ...res.card,
+          memberName: res.card.memberName || staff.full_name,
+          phone: res.card.phone ?? (phone.trim() || null),
+        })
+      } else if (res.cardShortCode) {
         setIssuedCard({
           shortCode: res.cardShortCode,
           memberCode: 'CMAMS Worker',
           memberName: staff.full_name,
-          credential: `cma://v1/${res.cardShortCode}`,
+          credential: res.cardShortCode,
           phone: phone.trim() || null,
         })
       }

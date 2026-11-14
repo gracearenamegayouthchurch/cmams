@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/cmams-api'
 import { ThemeProvider } from '@/context/theme-provider'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { AnalyticsPage } from './analytics'
+import { buildWhatsAppShare } from './card-render'
 import { CardDownloads, CardsPage } from './cards'
 import { CatalogsPage } from './catalogs'
 import { CellsPage } from './cells'
@@ -2154,5 +2155,117 @@ describe('CMAMS browser workflows', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Check in without card' }))
     await expect.element(screen.getByText('Recent check-ins (this session)')).toBeVisible()
     await expect.element(screen.getByText('Manual lookup')).toBeVisible()
+  })
+
+  it('ignores masked phones for WhatsApp links and confirms before replacing an active card', async () => {
+    const maskedShare = buildWhatsAppShare({
+      first_name: 'Ada',
+      last_name: 'Okafor',
+      member_code: 'CM-1001',
+      short_code: '9K4-M7X',
+      phone: '+234803*****92',
+    })
+    expect(maskedShare.whatsappUrl).toBeNull()
+
+    const directShare = buildWhatsAppShare({
+      first_name: 'Ada',
+      last_name: 'Okafor',
+      member_code: 'CM-1001',
+      short_code: '9K4-M7X',
+      phone_e164: '+2348031234567',
+    })
+    expect(directShare.whatsappUrl).toContain('https://wa.me/2348031234567')
+
+    const personId = '11111111-1111-4111-8111-111111111111'
+    const unissuedId = '22222222-2222-4222-8222-222222222222'
+    const issuedPosts: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/v1/cards')) {
+          return jsonResponse({
+            cards: [
+              {
+                id: 'card-1',
+                short_code: '9K4-M7X',
+                person_id: personId,
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                lifecycle_stage: 'MEMBER',
+                scan_count: 3,
+              },
+            ],
+            unissued: [
+              {
+                id: unissuedId,
+                member_code: 'CM-1009',
+                first_name: 'Bola',
+                last_name: 'Adeyemi',
+                lifecycle_stage: 'FIRST_TIMER',
+                phone: '+234803*****99',
+                registered_at: '2026-10-20T09:00:00Z',
+              },
+            ],
+          })
+        }
+        if (url.includes('/api/v1/people?q=')) {
+          return jsonResponse({
+            people: [
+              {
+                id: personId,
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                phone: '+234803*****92',
+                lifecycle_stage: 'MEMBER',
+              },
+            ],
+          })
+        }
+        if (url.endsWith('/cards') && init?.method === 'POST') {
+          issuedPosts.push(url)
+          return jsonResponse({
+            card: {
+              memberCode: url.includes(unissuedId) ? 'CM-1009' : 'CM-1001',
+              shortCode: '7P2-N4M',
+              credential: `cma://v1/${'C'.repeat(22)}`,
+            },
+          })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<CardsPage />)
+    await expect.element(screen.getByText('Ada Okafor')).toBeVisible()
+
+    // Searching a person with an active card offers Replace card with confirmation
+    await userEvent.type(screen.getByLabelText(/find person/i), 'Ada')
+    await expect.element(screen.getByText(/Active · 9K4-M7X/)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: /replace card/i }))
+    await expect
+      .element(
+        screen.getByRole('heading', { name: /Replace card for Ada Okafor\?/i })
+      )
+      .toBeVisible()
+    expect(issuedPosts).toHaveLength(0)
+
+    await userEvent.click(
+      page.getByRole('alertdialog').getByRole('button', { name: 'Replace card' })
+    )
+    await expect.poll(() => issuedPosts.length).toBe(1)
+    await expect
+      .element(screen.getByAltText(/Attendance card for CM-1001/))
+      .toBeVisible()
+
+    // Unissued members tab supports 1-click issuance
+    await userEvent.click(screen.getByRole('tab', { name: /Unissued members/i }))
+    await expect.element(screen.getByText('Bola Adeyemi')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: /^issue card$/i }))
+    await expect
+      .element(screen.getByAltText(/Attendance card for CM-1009/))
+      .toBeVisible()
   })
 })

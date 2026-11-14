@@ -20,7 +20,12 @@ describe('browser card rendering', () => {
 
     const batchPdf = await renderBatchCardsPdf([
       card,
-      { ...card, memberCode: 'CM-1002', shortCode: '3B2-K99' },
+      {
+        ...card,
+        memberCode: 'CM-1002',
+        shortCode: '3B2-K99',
+        memberName: 'Oluwatobiloba Chukwuemeka-Okonkwo',
+      },
     ])
     expect(new TextDecoder().decode(batchPdf.subarray(0, 5))).toBe('%PDF-')
   })
