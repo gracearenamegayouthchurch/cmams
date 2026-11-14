@@ -33,7 +33,7 @@ export function ServicePicker({
       >
         {label}
       </Label>
-      <Select value={value || undefined} onValueChange={onChange}>
+      <Select value={value} onValueChange={onChange}>
         <SelectTrigger id='service-picker' className='w-full sm:w-80'>
           <SelectValue
             placeholder={

@@ -19,7 +19,7 @@ it('returns null when the selected service does not exist', async () => {
   expect(statements).toHaveLength(1)
 })
 
-it('assembles attendance, breakdowns, and the latest-Sunday absentee list', async () => {
+it('assembles attendance, breakdowns, entry methods, and the latest-Sunday absentee list', async () => {
   const statements: { sql: string; args?: unknown[] }[] = []
   const db = {
     query: async (sql: string, args?: unknown[]) => {
@@ -51,6 +51,7 @@ it('assembles attendance, breakdowns, and the latest-Sunday absentee list', asyn
               members: 7,
               first_timers: 2,
               returning_visitors: 1,
+              eligible: 14,
             },
             {
               id: '55555555-5555-4555-8555-555555555555',
@@ -60,6 +61,7 @@ it('assembles attendance, breakdowns, and the latest-Sunday absentee list', asyn
               members: 6,
               first_timers: 1,
               returning_visitors: 1,
+              eligible: 12,
             },
           ],
         }
@@ -101,6 +103,14 @@ it('assembles attendance, breakdowns, and the latest-Sunday absentee list', asyn
             },
           ],
         }
+      if (sql.includes('GROUP BY checkin_method'))
+        return {
+          rows: [
+            { checkin_method: 'QR_SCAN', count: 7 },
+            { checkin_method: 'SHORTCODE_ENTRY', count: 2 },
+            { checkin_method: 'MANUAL_SEARCH', count: 1 },
+          ],
+        }
       return { rows: [] }
     },
   }
@@ -135,11 +145,42 @@ it('assembles attendance, breakdowns, and the latest-Sunday absentee list', asyn
         last_attended_at: '2026-10-11T08:30:00.000Z',
       },
     ],
+    entryMethods: {
+      total: 10,
+      qrAdoptionPercent: 90,
+      methods: [
+        {
+          method: 'QR_SCAN',
+          label: 'Camera QR Scan',
+          count: 7,
+          percent: 70,
+        },
+        {
+          method: 'SHORTCODE_ENTRY',
+          label: '6-Digit Shortcode',
+          count: 2,
+          percent: 20,
+        },
+        {
+          method: 'MANUAL_SEARCH',
+          label: 'Manual Phone Search',
+          count: 1,
+          percent: 10,
+        },
+        {
+          method: 'VISITOR_DESK_REGISTRATION',
+          label: 'Welcome Desk',
+          count: 0,
+          percent: 0,
+        },
+      ],
+    },
   })
   expect(report?.trend.map((point) => point.date)).toEqual([
     '2026-10-18T08:00:00.000Z',
     '2026-10-25T08:00:00.000Z',
   ])
+  expect(report?.trend.map((point) => point.turnoutPercent)).toEqual([50, 50])
   expect(report?.cells[0]).toMatchObject({
     name: 'Ndar Region 1',
     region: 'NDAR',
@@ -161,4 +202,6 @@ it('assembles attendance, breakdowns, and the latest-Sunday absentee list', asyn
   const absenteeQuery = statements.find(({ sql }) => sql.includes('WITH latest'))
   expect(absenteeQuery?.sql).toContain("status='CHECKIN_CLOSED'")
   expect(absenteeQuery?.sql).toContain("p.lifecycle_stage='MEMBER'")
+  const entryQuery = statements.find(({ sql }) => sql.includes('GROUP BY checkin_method'))
+  expect(entryQuery?.args).toEqual([serviceId])
 })

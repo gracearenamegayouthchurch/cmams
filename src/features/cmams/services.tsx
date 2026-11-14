@@ -1,6 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarPlus, CheckCircle2, Clock } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import {
+  CalendarPlus,
+  CheckCircle2,
+  Clock,
+  LayoutDashboard,
+  ScanLine,
+} from 'lucide-react'
 import { api } from '@/lib/cmams-api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -79,6 +86,9 @@ export function ServicesPage() {
   const [closeTarget, setCloseTarget] = useState<Service | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Service | null>(null)
   const [editingService, setEditingService] = useState<Service | null>(null)
+  const [statusFilter, setStatusFilter] = useState<
+    'ALL' | 'OPEN' | 'SCHEDULED' | 'CLOSED'
+  >('ALL')
 
   const mutation = useMutation({
     mutationFn: ({
@@ -110,6 +120,28 @@ export function ServicesPage() {
   const openService = services.data?.services.find(
     (item) => item.status === 'CHECKIN_OPEN'
   )
+  const allServices = services.data?.services ?? []
+  const orderedServices = [...allServices].sort((a, b) => {
+    if (a.status === 'CHECKIN_OPEN' && b.status !== 'CHECKIN_OPEN') return -1
+    if (a.status !== 'CHECKIN_OPEN' && b.status === 'CHECKIN_OPEN') return 1
+    return 0
+  })
+  const visibleServices = orderedServices.filter((item) => {
+    if (statusFilter === 'OPEN') return item.status === 'CHECKIN_OPEN'
+    if (statusFilter === 'SCHEDULED') return item.status === 'SCHEDULED'
+    if (statusFilter === 'CLOSED') return item.status === 'CHECKIN_CLOSED'
+    return true
+  })
+
+  function resetForm() {
+    setName('')
+    setCategory('SUNDAY_SERVICE')
+    setScheduled(undefined)
+    setOpens(undefined)
+    setCloses(undefined)
+    setEditingService(null)
+    setFormError('')
+  }
 
   function applySundayPreset() {
     const preset = nextSundayPreset()
@@ -159,8 +191,7 @@ export function ServicesPage() {
           closesAt: closes.toISOString(),
         },
       })
-      setName('')
-      setEditingService(null)
+      resetForm()
     } catch {
       /* mutation.error displays the failure */
     }
@@ -274,6 +305,16 @@ export function ServicesPage() {
                     value={value}
                     onChange={(date) => {
                       setValue(date)
+                      if (id === 'scheduled' && date && !editingService) {
+                        if (!opens) {
+                          setOpens(new Date(date.getTime() - 60 * 60 * 1000))
+                        }
+                        if (!closes) {
+                          setCloses(
+                            new Date(date.getTime() + 3 * 60 * 60 * 1000)
+                          )
+                        }
+                      }
                       setFormError('')
                     }}
                     granularity='minute'
@@ -303,14 +344,7 @@ export function ServicesPage() {
                   type='button'
                   variant='outline'
                   className='w-full'
-                  onClick={() => {
-                    setEditingService(null)
-                    setName('')
-                    setScheduled(undefined)
-                    setOpens(undefined)
-                    setCloses(undefined)
-                    setFormError('')
-                  }}
+                  onClick={resetForm}
                 >
                   Cancel edit
                 </Button>
@@ -320,12 +354,43 @@ export function ServicesPage() {
         </Card>
 
         <div className='space-y-4'>
-          <div className='flex items-center justify-between'>
-            <h2 className='text-base font-semibold'>Scheduled & recent</h2>
-            {services.data && (
-              <Badge variant='secondary'>
-                {services.data.services.length} total
-              </Badge>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <div className='flex items-center gap-2.5'>
+              <h2 className='text-base font-semibold'>Scheduled & recent</h2>
+              {services.data && (
+                <Badge variant='secondary' className='tabular-nums'>
+                  {allServices.length} total
+                </Badge>
+              )}
+            </div>
+            {allServices.length > 0 && (
+              <div
+                role='group'
+                aria-label='Filter services by status'
+                className='inline-flex items-center rounded-lg border bg-muted/40 p-0.5 text-xs'
+              >
+                {(
+                  [
+                    ['ALL', 'All'],
+                    ['OPEN', 'Open'],
+                    ['SCHEDULED', 'Scheduled'],
+                    ['CLOSED', 'Closed'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type='button'
+                    onClick={() => setStatusFilter(key)}
+                    className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                      statusFilter === key
+                        ? 'bg-background text-foreground shadow-2xs'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
           <QueryState
@@ -336,130 +401,171 @@ export function ServicesPage() {
             emptyDescription='Use the form to schedule your next Sunday or midweek service.'
             onRetry={() => void services.refetch()}
           />
-          {services.data?.services.map((service) => (
-            <Card key={service.id}>
-              <CardContent className='flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between'>
-                <div className='space-y-1.5'>
-                  <div className='flex flex-wrap items-center gap-2.5'>
-                    <h3 className='font-semibold'>{service.name}</h3>
-                    <Badge
-                      variant='outline'
-                      className={serviceStatusClass(service.status)}
-                    >
-                      {formatServiceStatus(service.status)}
-                    </Badge>
-                  </div>
-                  <p className='text-sm text-muted-foreground'>
-                    {formatCategory(service.category)} ·{' '}
-                    {formatDateTime(service.scheduled_start_at)}
-                  </p>
-                  <p className='flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground'>
-                    <Clock className='size-3.5' aria-hidden='true' />
-                    <span>
-                      Check-in window:{' '}
-                      {formatTimeRange(
-                        service.checkin_opens_at,
-                        service.checkin_closes_at
-                      )}
-                    </span>
-                    {service.locked_eligible_member_count !== null && (
-                      <span>
-                        · {service.locked_eligible_member_count} eligible
-                        members
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <div className='flex flex-wrap gap-2'>
-                  {service.status === 'SCHEDULED' && (
-                    <div className='space-y-1.5 sm:text-right'>
-                      <div className='flex gap-2 sm:justify-end'>
-                        <Button
-                          size='sm'
-                          variant='outline'
-                          disabled={mutation.isPending}
-                          onClick={() => startEditing(service)}
-                        >
-                          Edit service
-                        </Button>
-                        <Button
-                          size='sm'
-                          variant='destructive'
-                          disabled={mutation.isPending}
-                          onClick={() => {
-                            setMessage('')
-                            setCancelTarget(service)
-                          }}
-                        >
-                          Delete service
-                        </Button>
-                      </div>
-                      <Button
-                        size='sm'
-                        disabled={
-                          mutation.isPending ||
-                          !!openService ||
-                          now < Date.parse(service.checkin_opens_at) ||
-                          now > Date.parse(service.checkin_closes_at)
-                        }
-                        onClick={() => {
-                          setMessage('')
-                          void mutation
-                            .mutateAsync({
-                              path: `/api/v1/services/${service.id}/open`,
-                              body: {},
-                            })
-                            .catch(() => {})
-                        }}
-                      >
-                        Open check-in
-                      </Button>
-                      {now < Date.parse(service.checkin_opens_at) && (
-                        <p className='text-xs text-muted-foreground sm:max-w-48'>
-                          Check-in opens on{' '}
-                          {formatDateTime(service.checkin_opens_at)}.
-                        </p>
-                      )}
-                      {now > Date.parse(service.checkin_closes_at) && (
-                        <p className='text-xs text-muted-foreground sm:max-w-48'>
-                          This check-in window ended on{' '}
-                          {formatDateTime(service.checkin_closes_at)}. Schedule
-                          a new service to check in arrivals.
-                        </p>
-                      )}
-                      {openService && (
-                        <p className='text-xs text-muted-foreground sm:max-w-48'>
-                          Close {openService.name} before opening another
-                          service.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {service.status === 'CHECKIN_OPEN' && (
-                    <div className='space-y-1.5 sm:text-right'>
-                      <Button
-                        size='sm'
+          {allServices.length > 0 && visibleServices.length === 0 && (
+            <QueryState
+              loading={false}
+              error={null}
+              empty
+              emptyTitle='No matching services'
+              emptyDescription='Try switching the status filter above.'
+            />
+          )}
+          {visibleServices.map((service) => {
+            const isOpen = service.status === 'CHECKIN_OPEN'
+            return (
+              <Card
+                key={service.id}
+                className={
+                  isOpen
+                    ? 'border-emerald-500/45 bg-emerald-50/25 dark:bg-emerald-950/15'
+                    : undefined
+                }
+              >
+                <CardContent className='flex flex-col gap-4 pt-6 sm:flex-row sm:items-start sm:justify-between'>
+                  <div className='min-w-0 space-y-1.5'>
+                    <div className='flex flex-wrap items-center gap-2.5'>
+                      <h3 className='font-semibold'>{service.name}</h3>
+                      <Badge
                         variant='outline'
-                        disabled={mutation.isPending}
-                        onClick={() => {
-                          setMessage('')
-                          setCloseTarget(service)
-                        }}
+                        className={serviceStatusClass(service.status)}
                       >
-                        Close check-in
-                      </Button>
-                      {now > Date.parse(service.checkin_closes_at) && (
-                        <p className='text-xs text-amber-700 sm:max-w-48 dark:text-amber-300'>
-                          The window has ended. Close check-in to lock the final
-                          count.
-                        </p>
-                      )}
+                        {isOpen && (
+                          <span
+                            className='mr-1.5 inline-block size-1.5 rounded-full bg-emerald-500'
+                            aria-hidden='true'
+                          />
+                        )}
+                        {formatServiceStatus(service.status)}
+                      </Badge>
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    <p className='text-sm text-muted-foreground'>
+                      {formatCategory(service.category)} ·{' '}
+                      {formatDateTime(service.scheduled_start_at)}
+                    </p>
+                    <p className='flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground'>
+                      <Clock className='size-3.5 shrink-0' aria-hidden='true' />
+                      <span>
+                        Window:{' '}
+                        {formatTimeRange(
+                          service.checkin_opens_at,
+                          service.checkin_closes_at
+                        )}
+                      </span>
+                      {service.attendance_count !== undefined &&
+                        service.status !== 'SCHEDULED' && (
+                          <span>
+                            · {service.attendance_count} checked in
+                          </span>
+                        )}
+                      {service.locked_eligible_member_count !== null && (
+                        <span>
+                          · {service.locked_eligible_member_count} eligible
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div className='flex shrink-0 flex-col gap-2 sm:items-end'>
+                    {service.status === 'SCHEDULED' && (
+                      <>
+                        <div className='flex flex-wrap items-center gap-2 sm:justify-end'>
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            disabled={mutation.isPending}
+                            onClick={() => startEditing(service)}
+                          >
+                            Edit service
+                          </Button>
+                          <Button
+                            size='sm'
+                            variant='destructive'
+                            disabled={mutation.isPending}
+                            onClick={() => {
+                              setMessage('')
+                              setCancelTarget(service)
+                            }}
+                          >
+                            Delete service
+                          </Button>
+                          <Button
+                            size='sm'
+                            disabled={
+                              mutation.isPending ||
+                              !!openService ||
+                              now < Date.parse(service.checkin_opens_at) ||
+                              now > Date.parse(service.checkin_closes_at)
+                            }
+                            onClick={() => {
+                              setMessage('')
+                              void mutation
+                                .mutateAsync({
+                                  path: `/api/v1/services/${service.id}/open`,
+                                  body: {},
+                                })
+                                .catch(() => {})
+                            }}
+                          >
+                            Open check-in
+                          </Button>
+                        </div>
+                        {now < Date.parse(service.checkin_opens_at) && (
+                          <p className='text-xs text-muted-foreground sm:text-right'>
+                            Check-in opens on{' '}
+                            {formatDateTime(service.checkin_opens_at)}.
+                          </p>
+                        )}
+                        {now > Date.parse(service.checkin_closes_at) && (
+                          <p className='text-xs text-muted-foreground sm:text-right'>
+                            This check-in window ended on{' '}
+                            {formatDateTime(service.checkin_closes_at)}.
+                          </p>
+                        )}
+                        {openService && (
+                          <p className='text-xs text-muted-foreground sm:text-right'>
+                            Close {openService.name} before opening another.
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {isOpen && (
+                      <>
+                        <div className='flex flex-wrap items-center gap-2 sm:justify-end'>
+                          <Button size='sm' variant='outline' asChild>
+                            <Link to='/dashboard'>
+                              <LayoutDashboard className='size-3.5' />
+                              Dashboard
+                            </Link>
+                          </Button>
+                          <Button size='sm' asChild>
+                            <Link to='/scan'>
+                              <ScanLine className='size-3.5' />
+                              Open scanner
+                            </Link>
+                          </Button>
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            disabled={mutation.isPending}
+                            onClick={() => {
+                              setMessage('')
+                              setCloseTarget(service)
+                            }}
+                          >
+                            Close check-in
+                          </Button>
+                        </div>
+                        {now > Date.parse(service.checkin_closes_at) && (
+                          <p className='text-xs text-amber-700 sm:text-right dark:text-amber-300'>
+                            Window ended. Close check-in to lock final turnout.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       </div>
 

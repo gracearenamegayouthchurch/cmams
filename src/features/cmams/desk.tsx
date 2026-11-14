@@ -291,7 +291,11 @@ export function DeskPage() {
     }
   }
 
-  async function manualCheckin(existing: Person, defaultReason?: string) {
+  async function manualCheckin(
+    existing: Person,
+    defaultReason?: string,
+    method?: 'MANUAL_SEARCH' | 'VISITOR_DESK_REGISTRATION'
+  ) {
     const reasonText = (defaultReason ?? manualReason).trim()
     if (!activeId || reasonText.length < 3) {
       setError(
@@ -310,6 +314,7 @@ export function DeskPage() {
             personId: existing.id,
             eventId: crypto.randomUUID(),
             reason: reasonText,
+            ...(method ? { method } : {}),
           }),
         }
       )
@@ -921,7 +926,11 @@ export function DeskPage() {
                     size='sm'
                     disabled={busy}
                     onClick={() =>
-                      void manualCheckin(person, 'Registered at desk')
+                      void manualCheckin(
+                        person,
+                        'Registered at desk',
+                        'VISITOR_DESK_REGISTRATION'
+                      )
                     }
                   >
                     <UserCheck className='size-4' />

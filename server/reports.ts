@@ -56,9 +56,12 @@ export async function absenteeList(db: Pick<pg.Pool, 'query'>, consecutive = 2) 
   const result = await db.query(`WITH recent AS (
     SELECT id,scheduled_start_at FROM services WHERE category='SUNDAY_SERVICE' AND status='CHECKIN_CLOSED'
     ORDER BY scheduled_start_at DESC LIMIT $1
-  ) SELECT p.id,p.member_code,p.first_name,p.last_name,p.phone_e164,
+  ) SELECT p.id,p.member_code,p.first_name,p.last_name,p.phone_e164,c.name AS cell_name,
     (SELECT max(checked_in_at) FROM attendance_records WHERE person_id=p.id) last_attended_at
-    FROM people p WHERE (SELECT count(*) FROM recent)=$1
+    FROM people p
+    LEFT JOIN cell_memberships m ON m.person_id=p.id AND m.valid_to IS NULL
+    LEFT JOIN cells c ON c.id=m.cell_id
+    WHERE (SELECT count(*) FROM recent)=$1
       AND p.lifecycle_stage IN ('MEMBER','REGULAR_ATTENDEE') AND p.deleted_at IS NULL
       AND p.registered_at < (SELECT min(scheduled_start_at) FROM recent)
       AND NOT EXISTS (SELECT 1 FROM attendance_records a JOIN recent r ON r.id=a.service_id WHERE a.person_id=p.id)

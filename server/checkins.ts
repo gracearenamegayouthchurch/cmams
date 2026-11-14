@@ -26,25 +26,35 @@ export async function scanCard(db: Pick<pg.Pool, 'query'>, serviceId: string, cr
   return result.rows[0].outcome
 }
 
-export async function manualCheckin(db: Pick<pg.Pool, 'connect'>, serviceId: string, personId: string, eventId: string, reason: string, staffId: string) {
+export type ManualCheckinMethod = 'MANUAL_SEARCH' | 'VISITOR_DESK_REGISTRATION'
+
+export async function manualCheckin(
+  db: Pick<pg.Pool, 'connect'>,
+  serviceId: string,
+  personId: string,
+  eventId: string,
+  reason: string,
+  staffId: string,
+  method: ManualCheckinMethod = 'MANUAL_SEARCH'
+) {
   const explanation = validateManualReason(reason)
   const client = await db.connect()
   try {
     await client.query('BEGIN')
     const inserted = await client.query(`INSERT INTO attendance_records(service_id,person_id,idempotency_key,checkin_method,manual_reason,
       scanned_by_staff_id,snapshot_stage,snapshot_compound_id,snapshot_course_id)
-      SELECT s.id,p.id,$3,'MANUAL_SEARCH',$4,$5,p.lifecycle_stage,p.compound_id,p.course_id FROM services s
+      SELECT s.id,p.id,$3,$6::checkin_method,$4,$5,p.lifecycle_stage,p.compound_id,p.course_id FROM services s
       JOIN people p ON p.id=$2 AND p.deleted_at IS NULL AND p.lifecycle_stage NOT IN ('ARCHIVED','INACTIVE')
       WHERE s.id=$1 AND s.status='CHECKIN_OPEN' AND now() BETWEEN s.checkin_opens_at AND s.checkin_closes_at
       ON CONFLICT (service_id, person_id) DO NOTHING RETURNING id,checked_in_at`,
-      [serviceId, personId, eventId, explanation, staffId])
+      [serviceId, personId, eventId, explanation, staffId, method])
     if (!inserted.rows.length) {
       const existing = await client.query('SELECT checked_in_at FROM attendance_records WHERE service_id=$1 AND person_id=$2', [serviceId, personId])
       await client.query('COMMIT')
       return existing.rows.length ? { outcome: 'ALREADY_CHECKED_IN', checked_in_at: existing.rows[0].checked_in_at } : { outcome: 'SERVICE_CLOSED' }
     }
     await client.query(`INSERT INTO audit_logs(actor_staff_id,action_type,target_entity,target_id,new_state)
-      VALUES($1,'MANUAL_CHECKIN','attendance',$2,jsonb_build_object('reason',$3))`, [staffId, inserted.rows[0].id, explanation])
+      VALUES($1,'MANUAL_CHECKIN','attendance',$2,jsonb_build_object('reason',$3,'method',$4::text))`, [staffId, inserted.rows[0].id, explanation, method])
     await client.query('COMMIT')
     return { outcome: 'CHECKED_IN', checked_in_at: inserted.rows[0].checked_in_at }
   } catch (error) {

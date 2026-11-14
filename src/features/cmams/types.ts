@@ -7,6 +7,7 @@ export type Service = {
   checkin_opens_at: string
   checkin_closes_at: string
   locked_eligible_member_count: number | null
+  attendance_count?: number
 }
 
 export type Person = {
@@ -76,6 +77,8 @@ export type AnalyticsTrendPoint = {
   members: number
   firstTimers: number
   returningVisitors: number
+  eligible?: number
+  turnoutPercent?: number
 }
 
 export type AnalyticsAbsentee = {
@@ -85,6 +88,26 @@ export type AnalyticsAbsentee = {
   last_name: string
   cell_name: string | null
   last_attended_at: string | null
+}
+
+export type CheckinMethodType =
+  | 'QR_SCAN'
+  | 'SHORTCODE_ENTRY'
+  | 'MANUAL_SEARCH'
+  | 'VISITOR_DESK_REGISTRATION'
+
+export type AnalyticsEntryMethod = {
+  method: CheckinMethodType
+  label: string
+  description: string
+  count: number
+  percent: number
+}
+
+export type AnalyticsEntryMethodsSummary = {
+  total: number
+  qrAdoptionPercent: number
+  methods: AnalyticsEntryMethod[]
 }
 
 export type AnalyticsReport = {
@@ -110,6 +133,7 @@ export type AnalyticsReport = {
   }
   departments: AnalyticsBreakdown[]
   absentees: AnalyticsAbsentee[]
+  entryMethods: AnalyticsEntryMethodsSummary
   latestSunday: {
     id: string
     name: string

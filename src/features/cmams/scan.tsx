@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { BrowserQRCodeReader } from '@zxing/browser'
 import {
   AlertTriangle,
@@ -34,13 +35,24 @@ type Outcome = {
 
 type RecentScan = Outcome & { id: string; at: string; code: string }
 
+const MANUAL_REASON_PRESETS = [
+  'Forgot QR card',
+  'Card damaged',
+  'Awaiting card',
+] as const
+
 function signal(outcome: string) {
   try {
     const context = new AudioContext()
     const oscillator = context.createOscillator()
     const gain = context.createGain()
     oscillator.type = 'sine'
-    oscillator.frequency.value = outcome === 'CHECKED_IN' ? 880 : 330
+    oscillator.frequency.value =
+      outcome === 'CHECKED_IN'
+        ? 880
+        : outcome === 'ALREADY_CHECKED_IN'
+          ? 520
+          : 300
     gain.gain.value = 0.08
     oscillator.connect(gain)
     gain.connect(context.destination)
@@ -91,6 +103,29 @@ export function ScanPage() {
       ? openServices[0].id
       : ''
 
+  const activeService = openServices.find((item) => item.id === activeId)
+  const sessionRecordedCount = recent.filter(
+    (entry) => entry.outcome === 'CHECKED_IN'
+  ).length
+
+  const pushRecent = useCallback((entry: Outcome, code: string) => {
+    const stamp = new Date().toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    setRecent((prev) =>
+      [
+        {
+          ...entry,
+          id: crypto.randomUUID(),
+          at: stamp,
+          code,
+        },
+        ...prev,
+      ].slice(0, 6)
+    )
+  }, [])
+
   const checkIn = useCallback(
     async (credential: string) => {
       if (!activeId || inFlight.current || !cooldown.current.accept(credential))
@@ -98,10 +133,6 @@ export function ScanPage() {
       inFlight.current = true
       setBusy(true)
       setStatus(null)
-      const stamp = new Date().toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      })
       const displayCode = credential.startsWith('cma://')
         ? 'QR card'
         : credential.toUpperCase()
@@ -114,18 +145,12 @@ export function ScanPage() {
           }
         )
         setStatus(response)
-        setRecent((prev) =>
-          [
-            {
-              ...response,
-              id: crypto.randomUUID(),
-              at: stamp,
-              code: displayCode,
-            },
-            ...prev,
-          ].slice(0, 5)
-        )
+        pushRecent(response, displayCode)
         signal(response.outcome)
+        if (response.outcome === 'CHECKED_IN') {
+          void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+          void queryClient.invalidateQueries({ queryKey: ['analytics'] })
+        }
       } catch (error) {
         cooldown.current.release(credential)
         const failure: Outcome = {
@@ -136,23 +161,13 @@ export function ScanPage() {
               : 'Connection failed. Try again.',
         }
         setStatus(failure)
-        setRecent((prev) =>
-          [
-            {
-              ...failure,
-              id: crypto.randomUUID(),
-              at: stamp,
-              code: displayCode,
-            },
-            ...prev,
-          ].slice(0, 5)
-        )
+        pushRecent(failure, displayCode)
       } finally {
         inFlight.current = false
         setBusy(false)
       }
     },
-    [activeId]
+    [activeId, pushRecent, queryClient]
   )
 
   useEffect(() => {
@@ -246,6 +261,10 @@ export function ScanPage() {
       return
     setBusy(true)
     setStatus(null)
+    const personSummary = {
+      full_name: `${selectedMember.first_name} ${selectedMember.last_name}`,
+      member_code: selectedMember.member_code,
+    }
     try {
       const response = await api<Outcome>(
         `/api/v1/services/${activeId}/manual-check-ins`,
@@ -258,24 +277,34 @@ export function ScanPage() {
           }),
         }
       )
-      setStatus({
+      const enriched: Outcome = {
         ...response,
-        ...(response.outcome === 'CHECKED_IN' || response.outcome === 'ALREADY_CHECKED_IN'
-          ? { person: {
-              full_name: `${selectedMember.first_name} ${selectedMember.last_name}`,
-              member_code: selectedMember.member_code,
-            } }
+        ...(response.outcome === 'CHECKED_IN' ||
+        response.outcome === 'ALREADY_CHECKED_IN'
+          ? { person: personSummary }
           : {}),
-      })
+      }
+      setStatus(enriched)
+      pushRecent(enriched, 'Manual lookup')
+      signal(response.outcome)
       if (response.outcome === 'CHECKED_IN') {
         setManualReason('')
+        setSelectedMember(null)
+        setMemberSearch('')
         await queryClient.invalidateQueries({ queryKey: ['scan-people'] })
+        void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+        void queryClient.invalidateQueries({ queryKey: ['analytics'] })
       }
     } catch (error) {
-      setStatus({
+      const failure: Outcome = {
         outcome: 'NETWORK_ERROR',
-        message: error instanceof Error ? error.message : 'Check-in failed. Try again.',
-      })
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Check-in failed. Try again.',
+      }
+      setStatus(failure)
+      pushRecent(failure, 'Manual lookup')
     } finally {
       setBusy(false)
     }
@@ -292,7 +321,7 @@ export function ScanPage() {
       title='Check-in'
       description='Scan a member QR card, enter its code, or find a member who forgot their card.'
     >
-      <div className='max-w-3xl space-y-6'>
+      <div className='space-y-6'>
         <QueryState
           loading={services.isPending}
           error={services.error}
@@ -301,17 +330,41 @@ export function ScanPage() {
 
         {services.data && (
           <div className='space-y-4'>
-            <ServicePicker
-              activeOnly
-              label='Open service'
-              services={services.data.services}
-              value={activeId}
-              onChange={(id) => {
-                setServiceId(id)
-                setCameraOn(false)
-                setStatus(null)
-              }}
-            />
+            <div className='flex flex-wrap items-end justify-between gap-4 rounded-xl border bg-card p-4 shadow-2xs'>
+              <ServicePicker
+                activeOnly
+                label='Open service'
+                services={services.data.services}
+                value={activeId}
+                onChange={(id) => {
+                  setServiceId(id)
+                  setCameraOn(false)
+                  setStatus(null)
+                }}
+              />
+              {activeService && (
+                <div className='flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground'>
+                  <Badge
+                    variant='outline'
+                    className='border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-200'
+                  >
+                    <span
+                      className='mr-1.5 inline-block size-1.5 rounded-full bg-emerald-500'
+                      aria-hidden='true'
+                    />
+                    Open
+                  </Badge>
+                  {(activeService.attendance_count !== undefined ||
+                    sessionRecordedCount > 0) && (
+                    <span className='tabular-nums'>
+                      {activeService.attendance_count !== undefined
+                        ? `${activeService.attendance_count + sessionRecordedCount} recorded`
+                        : `${sessionRecordedCount} recorded this session`}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
             {openServices.length > 1 && !activeId && (
               <div className='flex items-start gap-3 rounded-xl border border-amber-500/35 bg-amber-50/70 p-4 text-sm dark:bg-amber-950/30'>
                 <AlertTriangle
@@ -330,18 +383,25 @@ export function ScanPage() {
               </div>
             )}
             {openServices.length === 0 && (
-              <div className='flex items-start gap-3 rounded-xl border border-amber-500/35 bg-amber-50/70 p-4 text-sm dark:bg-amber-950/30'>
-                <AlertTriangle
-                  className='mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400'
-                  aria-hidden='true'
-                />
-                <div>
-                  <p className='font-medium'>No service is open for check-in</p>
-                  <p className='mt-0.5 text-muted-foreground'>
-                    Ask a supervisor to open check-in on the Services page
-                    before scanning arrivals.
-                  </p>
+              <div className='flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-50/70 p-4 text-sm dark:bg-amber-950/30'>
+                <div className='flex items-start gap-3'>
+                  <AlertTriangle
+                    className='mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400'
+                    aria-hidden='true'
+                  />
+                  <div>
+                    <p className='font-medium'>
+                      No service is open for check-in
+                    </p>
+                    <p className='mt-0.5 text-muted-foreground'>
+                      Open a scheduled service on the Services page before
+                      scanning arrivals.
+                    </p>
+                  </div>
                 </div>
+                <Button variant='outline' size='sm' asChild>
+                  <Link to='/services'>Go to Services</Link>
+                </Button>
               </div>
             )}
           </div>
@@ -388,230 +448,281 @@ export function ScanPage() {
           </div>
         )}
 
-        <Card className='overflow-hidden'>
-          <CardContent className='space-y-5 pt-6'>
-            <div className='relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-xl bg-slate-950 text-sky-300 sm:min-h-[340px]'>
-              <video
-                ref={video}
-                muted
-                playsInline
-                autoPlay
-                className={`absolute inset-0 size-full object-cover ${cameraOn ? '' : 'hidden'}`}
-                aria-label='QR camera view'
-              />
-              <div className='absolute top-3 left-3 z-10'>
-                <Badge
-                  variant='secondary'
-                  className='border-white/15 bg-slate-900/80 text-xs text-slate-200 backdrop-blur'
-                >
-                  {cameraOn ? 'Camera active' : 'Camera paused'}
-                </Badge>
-              </div>
-              {!cameraOn && (
-                <div className='relative px-6 text-center'>
-                  <ScanLine className='mx-auto size-12 opacity-75' />
-                  <p className='mt-3 text-sm font-medium text-slate-200'>
-                    Ready to scan
-                  </p>
-                  <p className='mt-1 text-xs text-slate-400'>
-                    Start the camera to scan QR cards, or type the card code
-                    below.
-                  </p>
-                </div>
-              )}
-              {cameraOn && (
-                <div
-                  aria-hidden='true'
-                  className='pointer-events-none relative size-48 rounded-2xl border-2 border-sky-400 shadow-[0_0_0_9999px_rgba(2,6,23,0.45)] sm:size-56'
+        <div className='grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]'>
+          <Card className='h-fit overflow-hidden'>
+            <CardContent className='space-y-5 pt-6'>
+              <div className='relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-xl bg-slate-950 text-sky-300 sm:min-h-[340px]'>
+                <video
+                  ref={video}
+                  muted
+                  playsInline
+                  autoPlay
+                  className={`absolute inset-0 size-full object-cover ${cameraOn ? '' : 'hidden'}`}
+                  aria-label='QR camera view'
                 />
-              )}
-            </div>
-
-            {cameraError && (
-              <p role='alert' className='text-sm text-destructive'>
-                {cameraError}
-              </p>
-            )}
-
-            <div className='flex flex-wrap items-center gap-3'>
-              <Button
-                type='button'
-                disabled={!activeId}
-                variant={cameraOn ? 'outline' : 'default'}
-                className='w-full sm:w-auto'
-                onClick={() => {
-                  setCameraError('')
-                  setCameraOn((enabled) => !enabled)
-                }}
-              >
-                {cameraOn ? (
-                  <>
-                    <CameraOff className='size-4' />
-                    Stop camera
-                  </>
-                ) : (
-                  <>
-                    <Camera className='size-4' />
-                    Start camera
-                  </>
-                )}
-              </Button>
-            </div>
-
-            <div className='border-t pt-5'>
-              <form onSubmit={submit} className='space-y-2'>
-                <Label htmlFor='short-code'>Card code (shortcode)</Label>
-                <div className='flex flex-wrap gap-2'>
-                  <Input
-                    id='short-code'
-                    value={shortCode}
-                    onChange={(event) =>
-                      setShortCode(event.target.value.toUpperCase())
-                    }
-                    placeholder='9K4-M7X'
-                    autoComplete='off'
-                    className='max-w-[220px] font-mono tracking-wider uppercase'
-                  />
-                  <Button
-                    type='submit'
-                    disabled={!activeId || busy || !shortCode.trim()}
+                <div className='absolute top-3 left-3 z-10'>
+                  <Badge
+                    variant='secondary'
+                    className='border-white/15 bg-slate-900/80 text-xs text-slate-200 backdrop-blur'
                   >
-                    <Keyboard className='size-4' />
-                    {busy ? 'Checking…' : 'Check in'}
-                  </Button>
+                    {cameraOn ? 'Camera active' : 'Camera paused'}
+                  </Badge>
                 </div>
-                <p className='text-xs text-muted-foreground'>
-                  USB barcode scanners also work automatically while this page
-                  is open.
-                </p>
-              </form>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Forgot QR card? Search by name or phone</CardTitle>
-            <CardDescription>
-              Choose the correct profile, then enter a reason for manual check-in.
-              Family members may share a phone number.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className='space-y-4'>
-            <div className='space-y-1.5'>
-              <Label htmlFor='scan-member-search'>Search by name or phone</Label>
-              <Input
-                id='scan-member-search'
-                value={memberSearch}
-                autoComplete='off'
-                placeholder='Name, phone number or member code'
-                onChange={(event) => {
-                  setMemberSearch(event.target.value)
-                  setSelectedMember(null)
-                  setStatus(null)
-                }}
-              />
-            </div>
-            {memberSearch.trim() && (
-              memberSearch !== debouncedSearch || memberResults.isFetching ? (
-                <p role='status' className='text-sm text-muted-foreground'>Searching members…</p>
-              ) : memberResults.error ? (
-                <p role='alert' className='text-sm text-destructive'>Search failed. Try again.</p>
-              ) : !memberResults.data?.people.length ? (
-                <p className='text-sm text-muted-foreground'>No matching profiles found.</p>
-              ) : (
-                <div className='space-y-2'>
-                  {memberResults.data.people.map((person) => (
-                    <button
-                      key={person.id}
-                      type='button'
-                      aria-pressed={selectedMember?.id === person.id}
-                      onClick={() => {
-                        setSelectedMember(person)
-                        setStatus(null)
-                      }}
-                      className='block w-full rounded-lg border p-3 text-left text-sm hover:bg-muted/40 aria-pressed:border-primary'
-                    >
-                      <span className='font-semibold'>{person.first_name} {person.last_name}</span>
-                      <span className='ml-2 font-mono text-muted-foreground'>{person.member_code}</span>
-                      <span className='block text-xs text-muted-foreground'>Phone: {person.phone ?? 'Not provided'}</span>
-                    </button>
-                  ))}
-                </div>
-              )
-            )}
-            {selectedMember && (
-              <form className='space-y-3' onSubmit={(event) => void manualCheckin(event)}>
-                <p className='text-sm font-medium'>Selected: {selectedMember.first_name} {selectedMember.last_name} ({selectedMember.member_code})</p>
-                <div className='space-y-1.5'>
-                  <Label htmlFor='scan-manual-reason'>Reason for manual check-in</Label>
-                  <Input
-                    id='scan-manual-reason'
-                    maxLength={500}
-                    value={manualReason}
-                    onChange={(event) => setManualReason(event.target.value)}
-                    placeholder='Forgot QR card'
-                  />
-                </div>
-                <Button disabled={!activeId || busy || manualReason.trim().length < 3}>
-                  {busy ? 'Checking…' : 'Check in without card'}
-                </Button>
-                {!activeId && <p className='text-sm text-muted-foreground'>Open a service before checking in.</p>}
-              </form>
-            )}
-          </CardContent>
-        </Card>
-
-        {recent.length > 0 && (
-          <Card>
-            <CardHeader className='pb-3'>
-              <CardTitle className='text-sm font-medium text-muted-foreground'>
-                Recent scans (this session)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className='divide-y text-sm'>
-              {recent.map((entry) => {
-                const entryLabel =
-                  entry.outcome === 'CHECKED_IN'
-                    ? 'Recorded'
-                    : entry.outcome === 'ALREADY_CHECKED_IN'
-                      ? 'Duplicate'
-                      : 'Declined'
-                const entryBadge =
-                  entry.outcome === 'CHECKED_IN'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-200'
-                    : entry.outcome === 'ALREADY_CHECKED_IN'
-                      ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/50 dark:text-amber-200'
-                      : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/50 dark:text-rose-200'
-                return (
-                  <div
-                    key={entry.id}
-                    className='flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0'
-                  >
-                    <div className='min-w-0'>
-                      <p className='truncate font-medium'>
-                        {entry.person
-                          ? `${entry.person.full_name} (${entry.person.member_code})`
-                          : entry.code}
-                      </p>
-                      <p className='truncate font-mono text-xs text-muted-foreground'>
-                        {entry.code}
-                      </p>
-                    </div>
-                    <div className='flex shrink-0 items-center gap-2.5'>
-                      <Badge variant='outline' className={entryBadge}>
-                        {entryLabel}
-                      </Badge>
-                      <span className='text-xs text-muted-foreground tabular-nums'>
-                        {entry.at}
-                      </span>
-                    </div>
+                {!cameraOn && (
+                  <div className='relative px-6 text-center'>
+                    <ScanLine className='mx-auto size-12 opacity-75' />
+                    <p className='mt-3 text-sm font-medium text-slate-200'>
+                      Ready to scan
+                    </p>
+                    <p className='mt-1 text-xs text-slate-400'>
+                      Start the camera to scan QR cards, or type the card code
+                      below.
+                    </p>
                   </div>
-                )
-              })}
+                )}
+                {cameraOn && (
+                  <div
+                    aria-hidden='true'
+                    className='pointer-events-none relative size-48 rounded-2xl border-2 border-sky-400 shadow-[0_0_0_9999px_rgba(2,6,23,0.45)] sm:size-56'
+                  />
+                )}
+              </div>
+
+              {cameraError && (
+                <p role='alert' className='text-sm text-destructive'>
+                  {cameraError}
+                </p>
+              )}
+
+              <div className='flex flex-wrap items-center gap-3'>
+                <Button
+                  type='button'
+                  disabled={!activeId}
+                  variant={cameraOn ? 'outline' : 'default'}
+                  className='w-full sm:w-auto'
+                  onClick={() => {
+                    setCameraError('')
+                    setCameraOn((enabled) => !enabled)
+                  }}
+                >
+                  {cameraOn ? (
+                    <>
+                      <CameraOff className='size-4' />
+                      Stop camera
+                    </>
+                  ) : (
+                    <>
+                      <Camera className='size-4' />
+                      Start camera
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <div className='border-t pt-5'>
+                <form onSubmit={submit} className='space-y-2'>
+                  <Label htmlFor='short-code'>Card code (shortcode)</Label>
+                  <div className='flex flex-wrap gap-2'>
+                    <Input
+                      id='short-code'
+                      value={shortCode}
+                      onChange={(event) =>
+                        setShortCode(event.target.value.toUpperCase())
+                      }
+                      placeholder='9K4-M7X'
+                      autoComplete='off'
+                      className='max-w-[220px] font-mono tracking-wider uppercase'
+                    />
+                    <Button
+                      type='submit'
+                      disabled={!activeId || busy || !shortCode.trim()}
+                    >
+                      <Keyboard className='size-4' />
+                      {busy ? 'Checking…' : 'Check in'}
+                    </Button>
+                  </div>
+                  <p className='text-xs text-muted-foreground'>
+                    USB barcode scanners also work automatically while this page
+                    is open.
+                  </p>
+                </form>
+              </div>
             </CardContent>
           </Card>
-        )}
+
+          <div className='space-y-6'>
+            <Card>
+              <CardHeader>
+                <CardTitle>Forgot QR card? Search by name or phone</CardTitle>
+                <CardDescription>
+                  Choose the correct profile, then enter a reason for manual
+                  check-in. Family members may share a phone number.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className='space-y-4'>
+                <div className='space-y-1.5'>
+                  <Label htmlFor='scan-member-search'>
+                    Search by name or phone
+                  </Label>
+                  <Input
+                    id='scan-member-search'
+                    value={memberSearch}
+                    autoComplete='off'
+                    placeholder='Name, phone number or member code'
+                    onChange={(event) => {
+                      setMemberSearch(event.target.value)
+                      setSelectedMember(null)
+                      setStatus(null)
+                    }}
+                  />
+                </div>
+                {memberSearch.trim() &&
+                  (memberSearch !== debouncedSearch ||
+                  memberResults.isFetching ? (
+                    <p
+                      role='status'
+                      className='text-sm text-muted-foreground'
+                    >
+                      Searching members…
+                    </p>
+                  ) : memberResults.error ? (
+                    <p role='alert' className='text-sm text-destructive'>
+                      Search failed. Try again.
+                    </p>
+                  ) : !memberResults.data?.people.length ? (
+                    <p className='text-sm text-muted-foreground'>
+                      No matching profiles found.
+                    </p>
+                  ) : (
+                    <div className='space-y-2'>
+                      {memberResults.data.people.map((person) => (
+                        <button
+                          key={person.id}
+                          type='button'
+                          aria-pressed={selectedMember?.id === person.id}
+                          onClick={() => {
+                            setSelectedMember(person)
+                            setStatus(null)
+                          }}
+                          className='block w-full rounded-lg border p-3 text-left text-sm transition-colors hover:bg-muted/40 aria-pressed:border-primary aria-pressed:bg-muted/30'
+                        >
+                          <span className='font-semibold'>
+                            {person.first_name} {person.last_name}
+                          </span>
+                          <span className='ml-2 font-mono text-muted-foreground'>
+                            {person.member_code}
+                          </span>
+                          <span className='block text-xs text-muted-foreground'>
+                            Phone: {person.phone ?? 'Not provided'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                {selectedMember && (
+                  <form
+                    className='space-y-3 rounded-lg border bg-muted/20 p-3.5'
+                    onSubmit={(event) => void manualCheckin(event)}
+                  >
+                    <p className='text-sm font-medium'>
+                      Selected: {selectedMember.first_name}{' '}
+                      {selectedMember.last_name} ({selectedMember.member_code})
+                    </p>
+                    <div className='space-y-1.5'>
+                      <Label htmlFor='scan-manual-reason'>
+                        Reason for manual check-in
+                      </Label>
+                      <Input
+                        id='scan-manual-reason'
+                        maxLength={500}
+                        value={manualReason}
+                        onChange={(event) =>
+                          setManualReason(event.target.value)
+                        }
+                        placeholder='Forgot QR card'
+                      />
+                      <div className='flex flex-wrap gap-1.5 pt-0.5'>
+                        {MANUAL_REASON_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type='button'
+                            onClick={() => setManualReason(preset)}
+                            className='rounded-md border bg-background px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground'
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <Button
+                      disabled={
+                        !activeId || busy || manualReason.trim().length < 3
+                      }
+                    >
+                      {busy ? 'Checking…' : 'Check in without card'}
+                    </Button>
+                    {!activeId && (
+                      <p className='text-sm text-muted-foreground'>
+                        Open a service before checking in.
+                      </p>
+                    )}
+                  </form>
+                )}
+              </CardContent>
+            </Card>
+
+            {recent.length > 0 && (
+              <Card>
+                <CardHeader className='pb-3'>
+                  <CardTitle className='text-sm font-medium text-muted-foreground'>
+                    Recent check-ins (this session)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className='divide-y text-sm'>
+                  {recent.map((entry) => {
+                    const entryLabel =
+                      entry.outcome === 'CHECKED_IN'
+                        ? 'Recorded'
+                        : entry.outcome === 'ALREADY_CHECKED_IN'
+                          ? 'Duplicate'
+                          : 'Declined'
+                    const entryBadge =
+                      entry.outcome === 'CHECKED_IN'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-200'
+                        : entry.outcome === 'ALREADY_CHECKED_IN'
+                          ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/50 dark:text-amber-200'
+                          : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/50 dark:text-rose-200'
+                    return (
+                      <div
+                        key={entry.id}
+                        className='flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0'
+                      >
+                        <div className='min-w-0'>
+                          <p className='truncate font-medium'>
+                            {entry.person
+                              ? `${entry.person.full_name} (${entry.person.member_code})`
+                              : entry.code}
+                          </p>
+                          <p className='truncate font-mono text-xs text-muted-foreground'>
+                            {entry.code}
+                          </p>
+                        </div>
+                        <div className='flex shrink-0 items-center gap-2.5'>
+                          <Badge variant='outline' className={entryBadge}>
+                            {entryLabel}
+                          </Badge>
+                          <span className='text-xs text-muted-foreground tabular-nums'>
+                            {entry.at}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
       </div>
     </ChurchPage>
   )

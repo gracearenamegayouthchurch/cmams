@@ -21,6 +21,7 @@ import { DeskPage } from './desk'
 import { DirectoryPage } from './directory'
 import { LoginPage } from './login'
 import { QueryState } from './query-state'
+import { ReportsPage } from './reports'
 import { ScanPage } from './scan'
 import { ServicesPage } from './services'
 import { SmsPage } from './sms'
@@ -1592,6 +1593,42 @@ describe('CMAMS browser workflows', () => {
                 last_attended_at: '2026-10-11T08:30:00.000Z',
               },
             ],
+            entryMethods: {
+              total: 42,
+              qrAdoptionPercent: 88.1,
+              methods: [
+                {
+                  method: 'QR_SCAN',
+                  label: 'Camera QR Scan',
+                  description:
+                    'Scanned directly from physical or digital badge',
+                  count: 31,
+                  percent: 73.8,
+                },
+                {
+                  method: 'SHORTCODE_ENTRY',
+                  label: '6-Digit Shortcode',
+                  description: 'Typed code or hardware wedge scanner',
+                  count: 6,
+                  percent: 14.3,
+                },
+                {
+                  method: 'MANUAL_SEARCH',
+                  label: 'Manual Phone Search',
+                  description:
+                    'Looked up by phone or name when card was missing',
+                  count: 3,
+                  percent: 7.1,
+                },
+                {
+                  method: 'VISITOR_DESK_REGISTRATION',
+                  label: 'Welcome Desk',
+                  description: 'New first-timer registered on arrival',
+                  count: 2,
+                  percent: 4.8,
+                },
+              ],
+            },
             latestSunday: {
               id: sundayId,
               name: 'Youth Service',
@@ -1607,6 +1644,13 @@ describe('CMAMS browser workflows', () => {
     await expect
       .element(screen.getByText('Sunday attendance trend'))
       .toBeVisible()
+    await expect
+      .element(screen.getByText('Entry method breakdown'))
+      .toBeVisible()
+    await expect
+      .element(screen.getByText(/88\.1% Fast-lane adoption/i))
+      .toBeVisible()
+    await expect.element(screen.getByText('Camera QR Scan')).toBeVisible()
     await expect.element(screen.getByText('Attendance by cell')).toBeVisible()
     await expect
       .element(screen.getByText('Attendance by Activity Group'))
@@ -1924,5 +1968,191 @@ describe('CMAMS browser workflows', () => {
     await userEvent.type(input, 'Bola')
     expect(screen.getByText('Ada Okafor').query()).toBeNull()
     await expect.element(screen.getByText('Bola Okafor')).toBeVisible()
+  })
+
+  it('renders reports with attendance count, missed-Sunday selector, and absentee filtering', async () => {
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Sunday Service',
+                category: 'SUNDAY_SERVICE',
+                status: 'CHECKIN_CLOSED',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+                locked_eligible_member_count: 50,
+                attendance_count: 38,
+              },
+            ],
+          })
+        if (url.includes('/api/v1/reports/absentees?count=3'))
+          return jsonResponse({
+            people: [
+              {
+                id: 'p1',
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                phone_e164: '+2348031234567',
+                cell_name: 'Ndar Region 1',
+                last_attended_at: '2026-10-04T08:00:00Z',
+              },
+            ],
+          })
+        if (url.includes('/api/v1/reports/absentees?count=2'))
+          return jsonResponse({
+            people: [
+              {
+                id: 'p1',
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                phone_e164: '+2348031234567',
+                cell_name: 'Ndar Region 1',
+                last_attended_at: '2026-10-04T08:00:00Z',
+              },
+              {
+                id: 'p2',
+                member_code: 'CM-1002',
+                first_name: 'Chidi',
+                last_name: 'Nwosu',
+                phone_e164: null,
+                cell_name: 'Across Region 2',
+                last_attended_at: null,
+              },
+            ],
+          })
+        return jsonResponse({ error: 'Unexpected' }, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<ReportsPage />)
+    await expect
+      .element(screen.getByText(/38 people checked in/i))
+      .toBeVisible()
+    await expect.element(screen.getByText('Ada Okafor')).toBeVisible()
+    await expect.element(screen.getByText('Chidi Nwosu')).toBeVisible()
+
+    await userEvent.type(
+      screen.getByLabelText('Filter follow-up list'),
+      'Across'
+    )
+    expect(screen.getByText('Ada Okafor').query()).toBeNull()
+    await expect.element(screen.getByText('Chidi Nwosu')).toBeVisible()
+
+    await userEvent.clear(screen.getByLabelText('Filter follow-up list'))
+    await userEvent.click(screen.getByLabelText('Consecutive missed Sundays'))
+    await userEvent.click(page.getByRole('option', { name: 'Last 3 Sundays' }))
+    await expect
+      .element(screen.getByText(/Missed last 3 Sundays/i))
+      .toBeVisible()
+    await expect.element(screen.getByText('Ada Okafor')).toBeVisible()
+    expect(screen.getByText('Chidi Nwosu').query()).toBeNull()
+  })
+
+  it('filters services by status and shows quick actions on an open service', async () => {
+    const now = Date.now()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Past Sunday',
+                category: 'SUNDAY_SERVICE',
+                status: 'CHECKIN_CLOSED',
+                scheduled_start_at: new Date(now - 7 * 86_400_000).toISOString(),
+                checkin_opens_at: new Date(now - 7 * 86_400_000).toISOString(),
+                checkin_closes_at: new Date(now - 7 * 86_400_000 + 10_800_000).toISOString(),
+                locked_eligible_member_count: 80,
+                attendance_count: 64,
+              },
+              {
+                id: '22222222-2222-4222-8222-222222222222',
+                name: 'Live Sunday',
+                category: 'SUNDAY_SERVICE',
+                status: 'CHECKIN_OPEN',
+                scheduled_start_at: new Date(now).toISOString(),
+                checkin_opens_at: new Date(now - 3600_000).toISOString(),
+                checkin_closes_at: new Date(now + 7200_000).toISOString(),
+                locked_eligible_member_count: null,
+                attendance_count: 19,
+              },
+            ],
+          })
+        return jsonResponse({ error: 'Unexpected' }, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<ServicesPage />)
+    await expect.element(screen.getByText('Live Sunday')).toBeVisible()
+    await expect.element(screen.getByText(/19 checked in/i)).toBeVisible()
+    await expect.element(screen.getByRole('link', { name: /Open scanner/i })).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Closed', exact: true }))
+    expect(screen.getByText('Live Sunday').query()).toBeNull()
+    await expect.element(screen.getByText('Past Sunday')).toBeVisible()
+    await expect.element(screen.getByText(/64 checked in/i)).toBeVisible()
+  })
+
+  it('supports one-click manual check-in presets and logs them in recent check-ins', async () => {
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Sunday Service',
+                status: 'CHECKIN_OPEN',
+                category: 'SUNDAY_SERVICE',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+                attendance_count: 5,
+              },
+            ],
+          })
+        if (url.startsWith('/api/v1/people?'))
+          return jsonResponse({
+            people: [
+              {
+                id: 'ada',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                member_code: 'CM-1002',
+                phone: '+234803*****92',
+                lifecycle_stage: 'MEMBER',
+              },
+            ],
+          })
+        if (url.endsWith('/manual-check-ins'))
+          return jsonResponse({ outcome: 'CHECKED_IN' })
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<ScanPage />)
+    await expect.element(screen.getByText(/5 recorded/i)).toBeVisible()
+    await userEvent.type(screen.getByLabelText('Search by name or phone'), 'Ada')
+    await expect.element(screen.getByText('CM-1002')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: /Ada Okafor/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Card damaged' }))
+    await expect.element(screen.getByLabelText('Reason for manual check-in')).toHaveValue('Card damaged')
+    await userEvent.click(screen.getByRole('button', { name: 'Check in without card' }))
+    await expect.element(screen.getByText('Recent check-ins (this session)')).toBeVisible()
+    await expect.element(screen.getByText('Manual lookup')).toBeVisible()
   })
 })

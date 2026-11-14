@@ -30,3 +30,28 @@ it('does not disguise a reused event ID for a different person as a service outa
     .rejects.toThrow('Idempotency key already used')
   expect(statements).toContain('ROLLBACK')
 })
+
+it('records VISITOR_DESK_REGISTRATION when checking in a newly registered guest from the desk', async () => {
+  const calls: { sql: string; values?: unknown[] }[] = []
+  const client = {
+    query: async (sql: string, values?: unknown[]) => {
+      calls.push({ sql, values })
+      if (sql.includes('INSERT INTO attendance_records'))
+        return { rows: [{ id: 'att-1', checked_in_at: '2026-11-01T08:00:00Z' }] }
+      return { rows: [] }
+    },
+    release: () => {},
+  }
+  const result = await manualCheckin(
+    { connect: async () => client } as never,
+    'service',
+    'person',
+    'event',
+    'Registered at desk',
+    'staff',
+    'VISITOR_DESK_REGISTRATION'
+  )
+  expect(result).toMatchObject({ outcome: 'CHECKED_IN' })
+  const insert = calls.find((c) => c.sql.includes('INSERT INTO attendance_records'))
+  expect(insert?.values?.[5]).toBe('VISITOR_DESK_REGISTRATION')
+})

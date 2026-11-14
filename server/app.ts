@@ -476,6 +476,7 @@ export async function handleApi(request: Request): Promise<Response> {
               'first_name',
               'last_name',
               'phone_e164',
+              'cell_name',
               'last_attended_at',
             ]),
             {
@@ -552,6 +553,9 @@ export async function handleApi(request: Request): Promise<Response> {
             personId: z.uuid(),
             eventId: z.uuid(),
             reason: z.string(),
+            method: z
+              .enum(['MANUAL_SEARCH', 'VISITOR_DESK_REGISTRATION'])
+              .optional(),
           })
           .parse(await request.json())
         return json(
@@ -561,7 +565,8 @@ export async function handleApi(request: Request): Promise<Response> {
             body.personId,
             body.eventId,
             body.reason,
-            staff.id
+            staff.id,
+            body.method
           )
         )
       }

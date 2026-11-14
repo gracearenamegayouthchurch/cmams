@@ -201,10 +201,7 @@ function convert12HourTo24Hour(hour: number, period: Period) {
 }
 
 function display12HourValue(hours: number) {
-  if (hours === 0 || hours === 12) return '12'
-  if (hours >= 22) return `${hours - 12}`
-  if (hours % 12 > 9) return `${hours}`
-  return `0${hours % 12}`
+  return String(hours % 12 || 12).padStart(2, '0')
 }
 
 interface PeriodSelectorProps {
@@ -238,12 +235,7 @@ const TimePeriodSelect = React.forwardRef<
         const tempDate = new Date(date)
         const hours = display12HourValue(date.getHours())
         onDateChange?.(
-          setDateByType(
-            tempDate,
-            hours.toString(),
-            '12hours',
-            period === 'AM' ? 'PM' : 'AM'
-          )
+          setDateByType(tempDate, hours.toString(), '12hours', value)
         )
       }
     }
@@ -624,7 +616,7 @@ export const DateTimePicker = React.forwardRef<
             selected={value}
             month={month}
             onSelect={handleSelect}
-            onMonthChange={handleSelect}
+            onMonthChange={setMonth}
             captionLayout='dropdown'
             startMonth={new Date(year - yearRange, 0)}
             endMonth={new Date(year + yearRange, 11)}

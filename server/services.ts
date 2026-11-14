@@ -19,8 +19,9 @@ export async function createService(db: Pick<pg.Pool, 'query'>, input: unknown, 
 }
 
 export async function listServices(db: Pick<pg.Pool, 'query'>) {
-  const result = await db.query(`SELECT id,name,category,status,scheduled_start_at,checkin_opens_at,checkin_closes_at,locked_eligible_member_count
-    FROM services WHERE status <> 'CANCELLED' ORDER BY scheduled_start_at DESC LIMIT 50`)
+  const result = await db.query(`SELECT s.id,s.name,s.category,s.status,s.scheduled_start_at,s.checkin_opens_at,s.checkin_closes_at,s.locked_eligible_member_count,
+    (SELECT count(*)::int FROM attendance_records a WHERE a.service_id=s.id) AS attendance_count
+    FROM services s WHERE s.status <> 'CANCELLED' ORDER BY s.scheduled_start_at DESC LIMIT 50`)
   return result.rows
 }
 
