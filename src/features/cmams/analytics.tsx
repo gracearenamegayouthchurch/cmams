@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Keyboard, QrCode, Search, UserPlus, Zap } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -133,38 +133,28 @@ function EmptyNote({ title, text }: { title: string; text: string }) {
   )
 }
 
-const METHOD_CONFIG: Record<
+const METHOD_META: Record<
   CheckinMethodType,
   {
-    icon: typeof QrCode
-    stroke: string
-    bgClass: string
-    badgeClass: string
+    label: string
+    barClass: string
   }
 > = {
   QR_SCAN: {
-    icon: QrCode,
-    stroke: '#0ea5e9',
-    bgClass: 'bg-sky-500',
-    badgeClass: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20',
+    label: 'QR scan',
+    barClass: 'bg-sky-500',
   },
   SHORTCODE_ENTRY: {
-    icon: Keyboard,
-    stroke: '#6366f1',
-    bgClass: 'bg-indigo-500',
-    badgeClass: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20',
+    label: 'Shortcode',
+    barClass: 'bg-slate-600 dark:bg-slate-400',
   },
   MANUAL_SEARCH: {
-    icon: Search,
-    stroke: '#f59e0b',
-    bgClass: 'bg-amber-500',
-    badgeClass: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+    label: 'Manual lookup',
+    barClass: 'bg-amber-500',
   },
   VISITOR_DESK_REGISTRATION: {
-    icon: UserPlus,
-    stroke: '#10b981',
-    bgClass: 'bg-emerald-500',
-    badgeClass: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+    label: 'Welcome desk',
+    barClass: 'bg-emerald-500',
   },
 }
 
@@ -175,178 +165,117 @@ function EntryMethodBreakdownCard({
 }) {
   const [hovered, setHovered] = useState<CheckinMethodType | null>(null)
   const total = entryMethods.total
-  const radius = 64
-  const circumference = 2 * Math.PI * radius
-
-  let cumulativeOffset = 0
-  const slices = entryMethods.methods.map((item) => {
-    const fraction = total > 0 ? item.count / total : 0
-    const dash = fraction * circumference
-    const offset = cumulativeOffset
-    cumulativeOffset += dash
-    return {
-      ...item,
-      dash,
-      offset,
-    }
-  })
-
-  const hoveredItem = hovered
-    ? entryMethods.methods.find((m) => m.method === hovered)
-    : null
-  const manualCount =
-    entryMethods.methods.find((m) => m.method === 'MANUAL_SEARCH')?.count ?? 0
+  const activeSegments = entryMethods.methods.filter((item) => item.count > 0)
 
   return (
     <Card>
       <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-4'>
         <div className='space-y-1'>
-          <CardTitle>Entry method breakdown</CardTitle>
+          <CardTitle>Check-in methods</CardTitle>
           <CardDescription>
-            Check-in channels across QR scans, card codes, manual lookups, and
-            desk registrations.
+            How attendees checked into this service.
           </CardDescription>
         </div>
-        <Badge
-          variant='outline'
-          className='gap-1.5 border-sky-500/30 bg-sky-500/10 px-3 py-1 font-medium text-sky-700 dark:text-sky-300'
-        >
-          <Zap className='size-3.5' aria-hidden='true' />
-          <span>{entryMethods.qrAdoptionPercent}% Fast-lane adoption</span>
-        </Badge>
+        {total > 0 && (
+          <dl className='flex gap-6 text-right'>
+            <div>
+              <dt className='text-xs text-muted-foreground'>Card check-ins</dt>
+              <dd className='text-lg font-semibold tabular-nums'>
+                {entryMethods.qrAdoptionPercent}%
+              </dd>
+            </div>
+            <div>
+              <dt className='text-xs text-muted-foreground'>Total</dt>
+              <dd className='text-lg font-semibold tabular-nums'>
+                {integer.format(total)}
+              </dd>
+            </div>
+          </dl>
+        )}
       </CardHeader>
       <CardContent className='space-y-4'>
-        <div className='grid items-center gap-6 lg:grid-cols-12'>
-          <div className='flex flex-col items-center justify-center lg:col-span-5'>
-            <div className='relative size-48 sm:size-52'>
-              <svg
-                viewBox='0 0 200 200'
-                className='size-full'
-                aria-label='Entry methods donut chart'
-              >
-                <circle
-                  cx={100}
-                  cy={100}
-                  r={radius}
-                  fill='none'
-                  strokeWidth={18}
-                  className='stroke-muted/40'
-                />
-                {total > 0 &&
-                  slices
-                    .filter((s) => s.count > 0)
-                    .map((slice) => {
-                      const isHovered = hovered === slice.method
-                      const config = METHOD_CONFIG[slice.method]
-                      return (
-                        <circle
-                          key={slice.method}
-                          cx={100}
-                          cy={100}
-                          r={radius}
-                          fill='none'
-                          stroke={config.stroke}
-                          strokeWidth={isHovered ? 22 : 18}
-                          strokeDasharray={`${slice.dash} ${circumference - slice.dash}`}
-                          strokeDashoffset={-slice.offset}
-                          transform='rotate(-90 100 100)'
-                          className='cursor-pointer transition-all duration-300'
-                          style={{
-                            opacity: hovered === null || isHovered ? 1 : 0.35,
-                          }}
-                          onMouseEnter={() => setHovered(slice.method)}
-                          onMouseLeave={() => setHovered(null)}
-                        />
-                      )
-                    })}
-              </svg>
-              <div className='pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center'>
-                <span className='text-3xl font-bold tracking-tight tabular-nums sm:text-4xl'>
-                  {hoveredItem
-                    ? integer.format(hoveredItem.count)
-                    : integer.format(total)}
-                </span>
-                <span className='mt-0.5 max-w-[136px] truncate text-xs font-medium text-muted-foreground'>
-                  {hoveredItem
-                    ? `${hoveredItem.label} (${hoveredItem.percent}%)`
-                    : 'Total verified'}
-                </span>
-              </div>
+        {total === 0 ? (
+          <EmptyNote
+            title='No check-ins recorded yet'
+            text='Check-in channels will appear here once attendance is recorded.'
+          />
+        ) : (
+          <>
+            <div
+              role='img'
+              aria-label='Check-in method share'
+              className='flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-muted'
+            >
+              {activeSegments.map((segment) => {
+                const meta = METHOD_META[segment.method]
+                const dimmed = hovered !== null && hovered !== segment.method
+                return (
+                  <div
+                    key={segment.method}
+                    className={cn(
+                      'h-full transition-opacity duration-150 first:rounded-l-full last:rounded-r-full',
+                      meta.barClass,
+                      dimmed ? 'opacity-30' : 'opacity-100'
+                    )}
+                    style={{ width: `${(segment.count / total) * 100}%` }}
+                    onMouseEnter={() => setHovered(segment.method)}
+                    onMouseLeave={() => setHovered(null)}
+                  />
+                )
+              })}
             </div>
-          </div>
 
-          <div className='grid gap-2.5 sm:grid-cols-2 lg:col-span-7'>
-            {entryMethods.methods.map((method) => {
-              const config = METHOD_CONFIG[method.method]
-              const Icon = config.icon
-              const isHovered = hovered === method.method
-              return (
-                <div
-                  key={method.method}
-                  tabIndex={0}
-                  className={cn(
-                    'rounded-lg border p-3 transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    isHovered
-                      ? 'border-primary/50 bg-muted/60'
-                      : 'bg-card/50 hover:bg-muted/40'
-                  )}
-                  onMouseEnter={() => setHovered(method.method)}
-                  onMouseLeave={() => setHovered(null)}
-                  onFocus={() => setHovered(method.method)}
-                  onBlur={() => setHovered(null)}
-                >
-                  <div className='flex items-start justify-between gap-2.5'>
+            <ul className='divide-y'>
+              {entryMethods.methods.map((item) => {
+                const meta = METHOD_META[item.method]
+                const isActive = hovered === item.method
+                const isZero = item.count === 0
+                return (
+                  <li
+                    key={item.method}
+                    className={cn(
+                      'flex items-center justify-between gap-4 py-2.5 text-sm transition-colors first:pt-1 last:pb-0',
+                      isActive && 'bg-muted/35 -mx-2 rounded-md px-2'
+                    )}
+                    onMouseEnter={() => setHovered(item.method)}
+                    onMouseLeave={() => setHovered(null)}
+                  >
                     <div className='flex min-w-0 items-center gap-2.5'>
-                      <div
+                      <span
+                        aria-hidden='true'
                         className={cn(
-                          'flex size-8 shrink-0 items-center justify-center rounded-lg border',
-                          config.badgeClass
+                          'size-2 shrink-0 rounded-full',
+                          meta.barClass,
+                          isZero && 'opacity-35'
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'truncate font-medium',
+                          isZero && 'text-muted-foreground font-normal'
                         )}
                       >
-                        <Icon className='size-4' aria-hidden='true' />
-                      </div>
-                      <div className='min-w-0'>
-                        <p className='truncate text-sm font-medium'>
-                          {method.label}
-                        </p>
-                        <p className='truncate text-xs text-muted-foreground'>
-                          {method.description}
-                        </p>
-                      </div>
+                        {meta.label}
+                      </span>
                     </div>
-                  </div>
-                  <div className='mt-3 flex items-baseline justify-between text-xs tabular-nums'>
-                    <span className='text-muted-foreground'>
-                      {integer.format(method.count)} check-ins
-                    </span>
-                    <span className='text-sm font-semibold'>
-                      {method.percent}%
-                    </span>
-                  </div>
-                  <div className='mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted'>
-                    <div
-                      className={cn(
-                        'h-full rounded-full transition-[width] duration-500',
-                        config.bgClass
-                      )}
-                      style={{
-                        width: `${Math.min(100, Math.max(0, method.percent))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {(total === 0 ||
-          (manualCount > 0 && entryMethods.qrAdoptionPercent < 80)) && (
-          <p className='text-xs text-muted-foreground'>
-            {total === 0
-              ? 'Entry channel distribution will populate as worshippers check in.'
-              : `${integer.format(manualCount)} manual lookups recorded. Issue or reprint QR cards for repeat manual check-ins to speed up arrival.`}
-          </p>
+                    <div className='flex shrink-0 items-baseline gap-4 tabular-nums'>
+                      <span className='text-xs text-muted-foreground'>
+                        {integer.format(item.count)}
+                      </span>
+                      <span
+                        className={cn(
+                          'w-12 text-right font-semibold',
+                          isZero && 'font-normal text-muted-foreground'
+                        )}
+                      >
+                        {item.percent}%
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </>
         )}
       </CardContent>
     </Card>

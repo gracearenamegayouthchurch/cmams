@@ -1679,12 +1679,10 @@ describe('CMAMS browser workflows', () => {
       .element(screen.getByText('Sunday attendance trend'))
       .toBeVisible()
     await expect
-      .element(screen.getByText('Entry method breakdown'))
+      .element(screen.getByText('Check-in methods'))
       .toBeVisible()
-    await expect
-      .element(screen.getByText(/88\.1% Fast-lane adoption/i))
-      .toBeVisible()
-    await expect.element(screen.getByText('Camera QR Scan')).toBeVisible()
+    await expect.element(screen.getByText('88.1%')).toBeVisible()
+    await expect.element(screen.getByText('QR scan')).toBeVisible()
     await expect.element(screen.getByText('Attendance by cell')).toBeVisible()
     await expect
       .element(screen.getByText('Attendance by Activity Group'))
