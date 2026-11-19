@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Search, UserCheck } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { CheckCircle2, CreditCard, Search, UserCheck } from 'lucide-react'
 import { api, ApiError } from '@/lib/cmams-api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -38,14 +39,47 @@ import {
 } from './types'
 import { useDebouncedValue } from './use-debounced-value'
 
+const MANUAL_REASON_PRESETS = [
+  'Forgot QR card',
+  'Card damaged',
+  'Awaiting card',
+] as const
+
+function normalizeDeskPhone(raw: string): string {
+  const cleaned = raw.trim().replace(/[\s()-]/g, '')
+  if (!cleaned) return ''
+  if (/^0[789]\d{9}$/.test(cleaned)) return `+234${cleaned.slice(1)}`
+  if (/^\+2340\d{10}$/.test(cleaned)) return `+234${cleaned.slice(5)}`
+  if (/^234\d{10}$/.test(cleaned)) return `+${cleaned}`
+  return cleaned
+}
+
+function parseInitialDeskQuery() {
+  if (typeof window === 'undefined') {
+    return { firstName: '', lastName: '', phone: '' }
+  }
+  const q = new URLSearchParams(window.location.search).get('q')?.trim() ?? ''
+  if (!q) return { firstName: '', lastName: '', phone: '' }
+  if (/^[+\d\s()-]{6,}$/.test(q)) {
+    return { firstName: '', lastName: '', phone: q }
+  }
+  const parts = q.split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] ?? '',
+    lastName: parts.slice(1).join(' '),
+    phone: '',
+  }
+}
+
 export function DeskPage() {
   const queryClient = useQueryClient()
+  const [initialPrefill] = useState(parseInitialDeskQuery)
   const [mode, setMode] = useState<'new' | 'existing'>('new')
   const [memberSearch, setMemberSearch] = useState('')
   const [selectedMember, setSelectedMember] = useState<Person | null>(null)
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [phone, setPhone] = useState('')
+  const [firstName, setFirstName] = useState(initialPrefill.firstName)
+  const [lastName, setLastName] = useState(initialPrefill.lastName)
+  const [phone, setPhone] = useState(initialPrefill.phone)
   const [email, setEmail] = useState('')
   const [region, setRegion] = useState('')
   const [compoundName, setCompoundName] = useState('')
@@ -57,6 +91,10 @@ export function DeskPage() {
   const [birthDay, setBirthDay] = useState('')
   const [birthYear, setBirthYear] = useState('')
   const [consent, setConsent] = useState(false)
+  const [autoCheckIn, setAutoCheckIn] = useState(true)
+  const [checkedInPersonId, setCheckedInPersonId] = useState<string | null>(
+    null
+  )
   const [candidates, setCandidates] = useState<Person[]>([])
   const [confirmed, setConfirmed] = useState(false)
   const [householdId, setHouseholdId] = useState('')
@@ -96,11 +134,15 @@ export function DeskPage() {
       ),
     enabled: mode === 'existing' && debouncedMemberSearch.trim().length > 0,
   })
-  const activeId =
-    serviceId ||
+  const activeService =
+    services.data?.services.find((service) => service.id === serviceId) ??
     services.data?.services.find((service) => service.status === 'CHECKIN_OPEN')
-      ?.id ||
-    ''
+  const activeId = activeService?.id || ''
+  const normalizedPhonePreview = normalizeDeskPhone(phone)
+  const phonePreviewChanged =
+    Boolean(phone.trim()) &&
+    normalizedPhonePreview !== phone.trim() &&
+    /^\+[1-9]\d{7,14}$/.test(normalizedPhonePreview)
   const compounds = catalogs.data?.compounds ?? []
   const normalizedItemName = (value: string) =>
     value.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -170,13 +212,14 @@ export function DeskPage() {
     setCandidates([])
     setConfirmed(false)
     try {
+      const normalizedPhone = normalizeDeskPhone(phone)
       const response = await api<{ matches: Person[] }>(
         '/api/v1/people/duplicates',
         {
           method: 'POST',
           body: JSON.stringify({
             fullName: `${firstName} ${lastName}`,
-            phone: phone || null,
+            phone: normalizedPhone || null,
             email: email.trim() || null,
           }),
         }
@@ -225,21 +268,23 @@ export function DeskPage() {
       )
       return
     }
-    if (phone && !/^\+[1-9]\d{7,14}$/.test(phone)) {
+    const normalizedPhone = normalizeDeskPhone(phone)
+    if (normalizedPhone && !/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
       setError(
-        'Enter a phone number with country code and no spaces (e.g. +2348031234567), or leave it blank.'
+        'Enter a valid phone number (e.g. 08031234567 or +2348031234567), or leave it blank.'
       )
       return
     }
     setBusy(true)
     setCard(null)
+    setCheckedInPersonId(null)
     try {
       const response = await api<{ person: Person }>('/api/v1/people', {
         method: 'POST',
         body: JSON.stringify({
           firstName,
           lastName,
-          phone: phone || null,
+          phone: normalizedPhone || null,
           email,
           region,
           compoundName: compoundName.trim(),
@@ -259,17 +304,63 @@ export function DeskPage() {
       void queryClient.invalidateQueries({
         queryKey: ['registration-catalogs'],
       })
+      void queryClient.invalidateQueries({ queryKey: ['cards'] })
+      let cardReady = false
       try {
         const issued = await api<{ card: IssuedCard }>(
           `/api/v1/people/${response.person.id}/cards`,
           { method: 'POST', body: '{}' }
         )
-        setCard(issued.card)
-        setMessage('Registered and check-in card generated.')
+        setCard({
+          ...issued.card,
+          memberName:
+            issued.card.memberName ||
+            `${response.person.first_name} ${response.person.last_name}`,
+          phone: issued.card.phone ?? (normalizedPhone || null),
+        })
+        cardReady = true
       } catch {
         setError(
           `Registered ${response.person.member_code}, but the card could not be generated. Ask a supervisor to issue it on the Cards page.`
         )
+      }
+
+      if (autoCheckIn && activeId) {
+        try {
+          const checkinRes = await api<{ outcome: string }>(
+            `/api/v1/services/${activeId}/manual-check-ins`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                personId: response.person.id,
+                eventId: crypto.randomUUID(),
+                reason: 'Registered at desk',
+                method: 'VISITOR_DESK_REGISTRATION',
+              }),
+            }
+          )
+          if (
+            checkinRes.outcome === 'CHECKED_IN' ||
+            checkinRes.outcome === 'ALREADY_CHECKED_IN'
+          ) {
+            setCheckedInPersonId(response.person.id)
+            void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+            void queryClient.invalidateQueries({ queryKey: ['analytics'] })
+            if (cardReady) {
+              setMessage('Registered, card generated, and checked in.')
+            }
+          } else if (cardReady) {
+            setMessage('Registered and check-in card generated.')
+          }
+        } catch {
+          if (cardReady) {
+            setMessage(
+              'Registered and check-in card generated. Use the button to check in.'
+            )
+          }
+        }
+      } else if (cardReady) {
+        setMessage('Registered and check-in card generated.')
       }
     } catch (reason) {
       if (
@@ -278,9 +369,24 @@ export function DeskPage() {
       ) {
         setError(reason.message)
       } else if (reason instanceof ApiError && reason.status === 409) {
-        setError(
-          'A similar record already exists. Click "Check for matches" to review before registering.'
-        )
+        const duplicateMatches =
+          typeof reason.data === 'object' &&
+          reason.data &&
+          'matches' in reason.data &&
+          Array.isArray(reason.data.matches)
+            ? (reason.data.matches as Person[])
+            : []
+        if (duplicateMatches.length > 0) {
+          setCandidates(duplicateMatches)
+          setConfirmed(false)
+          setError(
+            'Found similar records. Review the matches on the right before registering.'
+          )
+        } else {
+          setError(
+            'A similar record already exists. Click "Check for matches" to review before registering.'
+          )
+        }
       } else {
         setError(
           reason instanceof Error ? reason.message : 'Registration failed'
@@ -325,6 +431,19 @@ export function DeskPage() {
             ? 'already checked in'
             : 'not checked in (service closed)'
       setMessage(`${existing.first_name} ${existing.last_name} — ${label}.`)
+      if (
+        result.outcome === 'CHECKED_IN' ||
+        result.outcome === 'ALREADY_CHECKED_IN'
+      ) {
+        if (person?.id === existing.id) {
+          setCheckedInPersonId(existing.id)
+        }
+        if (!defaultReason) {
+          setManualReason('')
+        }
+        void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+        void queryClient.invalidateQueries({ queryKey: ['analytics'] })
+      }
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : 'Check-in was not recorded'
@@ -360,25 +479,55 @@ export function DeskPage() {
         </div>
       )}
 
-      <div className='mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border bg-muted/30 px-4 py-3'>
-        <span className='text-sm font-medium'>Registering</span>
-        <RadioGroup
-          aria-label='Registration type'
-          value={mode}
-          onValueChange={(value) =>
-            chooseMode(value === 'existing' ? 'existing' : 'new')
-          }
-          className='flex flex-wrap gap-x-6 gap-y-2'
-        >
-          <div className='flex items-center gap-2'>
-            <RadioGroupItem value='new' id='registration-new' />
-            <Label htmlFor='registration-new'>New member</Label>
-          </div>
-          <div className='flex items-center gap-2'>
-            <RadioGroupItem value='existing' id='registration-existing' />
-            <Label htmlFor='registration-existing'>Existing member</Label>
-          </div>
-        </RadioGroup>
+      <div className='mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-2.5'>
+        <div className='flex flex-wrap items-center gap-3'>
+          <span className='text-xs font-medium tracking-wide text-muted-foreground uppercase'>
+            Desk mode
+          </span>
+          <RadioGroup
+            aria-label='Registration type'
+            value={mode}
+            onValueChange={(value) =>
+              chooseMode(value === 'existing' ? 'existing' : 'new')
+            }
+            className='inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-muted p-1'
+          >
+            <Label
+              htmlFor='registration-new'
+              className={`flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                mode === 'new'
+                  ? 'bg-background text-foreground shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <RadioGroupItem value='new' id='registration-new' />
+              New member
+            </Label>
+            <Label
+              htmlFor='registration-existing'
+              className={`flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                mode === 'existing'
+                  ? 'bg-background text-foreground shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <RadioGroupItem value='existing' id='registration-existing' />
+              Existing member
+            </Label>
+          </RadioGroup>
+        </div>
+        {activeService && (
+          <Badge
+            variant='outline'
+            className='border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-200'
+          >
+            <span
+              className='mr-1.5 inline-block size-1.5 rounded-full bg-emerald-500'
+              aria-hidden='true'
+            />
+            Open: {activeService.name}
+          </Badge>
+        )}
       </div>
 
       <div className='grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,1fr)]'>
@@ -438,15 +587,25 @@ export function DeskPage() {
                     value={phone}
                     onChange={(event) => {
                       setPhone(event.target.value)
+                      setError('')
                       setCandidates([])
                       setConfirmed(false)
                     }}
-                    placeholder='+2348031234567'
+                    placeholder='0803 123 4567 or +2348031234567'
                   />
-                  <p className='text-xs text-muted-foreground'>
-                    Include country code (e.g. +234). Leave blank if
-                    unavailable.
-                  </p>
+                  {phonePreviewChanged ? (
+                    <p className='text-xs text-emerald-700 dark:text-emerald-300'>
+                      Will save as{' '}
+                      <span className='font-mono'>
+                        {normalizedPhonePreview}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className='text-xs text-muted-foreground'>
+                      Local Nigerian numbers (e.g. 08031234567) auto-format to
+                      +234. Leave blank if unavailable.
+                    </p>
+                  )}
                 </div>
 
                 <div className='grid gap-4 sm:grid-cols-2'>
@@ -636,78 +795,84 @@ export function DeskPage() {
                     />
                   </div>
                 </div>
-                <div className='grid gap-4 sm:grid-cols-2'>
-                  <div className='space-y-1.5'>
-                    <Label htmlFor='room'>Room (optional)</Label>
-                    <Input
-                      id='room'
-                      maxLength={100}
-                      value={room}
-                      onChange={(event) => setRoom(event.target.value)}
-                    />
+                <div className='space-y-4 border-t pt-4'>
+                  <p className='text-xs font-medium tracking-wide text-muted-foreground uppercase'>
+                    Optional details
+                  </p>
+                  <div className='grid gap-4 sm:grid-cols-2'>
+                    <div className='space-y-1.5'>
+                      <Label htmlFor='room'>Room (optional)</Label>
+                      <Input
+                        id='room'
+                        maxLength={100}
+                        placeholder='e.g. 12'
+                        value={room}
+                        onChange={(event) => setRoom(event.target.value)}
+                      />
+                    </div>
+                    <div className='space-y-1.5'>
+                      <Label htmlFor='department'>
+                        Active department (optional)
+                      </Label>
+                      <Select
+                        value={departmentId || 'none'}
+                        onValueChange={(value) =>
+                          setDepartmentId(value === 'none' ? '' : value)
+                        }
+                      >
+                        <SelectTrigger id='department' className='w-full'>
+                          <SelectValue placeholder='No department' />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value='none'>No department</SelectItem>
+                          {catalogs.data?.departments.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+
                   <div className='space-y-1.5'>
-                    <Label htmlFor='department'>
-                      Active department (optional)
-                    </Label>
+                    <Label htmlFor='cell'>Cell group (optional)</Label>
                     <Select
-                      value={departmentId || 'none'}
+                      value={cellId || 'none'}
                       onValueChange={(value) =>
-                        setDepartmentId(value === 'none' ? '' : value)
+                        setCellId(value === 'none' ? '' : value)
                       }
                     >
-                      <SelectTrigger id='department' className='w-full'>
-                        <SelectValue placeholder='No department' />
+                      <SelectTrigger id='cell' className='w-full'>
+                        <SelectValue placeholder='No cell group' />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value='none'>No department</SelectItem>
-                        {catalogs.data?.departments.map((item) => (
-                          <SelectItem key={item.id} value={item.id}>
-                            {item.name}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value='none'>No cell group</SelectItem>
+                        {REGIONS.map((group) => {
+                          const groupCells = (cells.data?.cells ?? []).filter(
+                            (cell) => cell.region === group.code
+                          )
+                          if (!groupCells.length) return null
+                          return (
+                            <SelectGroup key={group.code}>
+                              <SelectLabel>{group.label}</SelectLabel>
+                              {groupCells.map((cell) => (
+                                <SelectItem key={cell.id} value={cell.id}>
+                                  {cell.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          )
+                        })}
                       </SelectContent>
                     </Select>
+                    {cells.error && (
+                      <p role='alert' className='text-sm text-destructive'>
+                        Cell choices could not load. Refresh before assigning a
+                        cell.
+                      </p>
+                    )}
                   </div>
-                </div>
-
-                <div className='space-y-1.5'>
-                  <Label htmlFor='cell'>Cell group (optional)</Label>
-                  <Select
-                    value={cellId || 'none'}
-                    onValueChange={(value) =>
-                      setCellId(value === 'none' ? '' : value)
-                    }
-                  >
-                    <SelectTrigger id='cell' className='w-full'>
-                      <SelectValue placeholder='No cell group' />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value='none'>No cell group</SelectItem>
-                      {REGIONS.map((group) => {
-                        const groupCells = (cells.data?.cells ?? []).filter(
-                          (cell) => cell.region === group.code
-                        )
-                        if (!groupCells.length) return null
-                        return (
-                          <SelectGroup key={group.code}>
-                            <SelectLabel>{group.label}</SelectLabel>
-                            {groupCells.map((cell) => (
-                              <SelectItem key={cell.id} value={cell.id}>
-                                {cell.name}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
-                  {cells.error && (
-                    <p role='alert' className='text-sm text-destructive'>
-                      Cell choices could not load. Refresh before assigning a
-                      cell.
-                    </p>
-                  )}
                 </div>
 
                 <div>
@@ -769,6 +934,28 @@ export function DeskPage() {
                         Linked to selected family household.
                       </p>
                     )}
+                  </div>
+                )}
+
+                {activeService && (
+                  <div className='flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-50/40 px-3.5 py-2.5 dark:bg-emerald-950/20'>
+                    <Checkbox
+                      id='auto-checkin'
+                      checked={autoCheckIn}
+                      onCheckedChange={(value) =>
+                        setAutoCheckIn(value === true)
+                      }
+                    />
+                    <Label
+                      htmlFor='auto-checkin'
+                      className='cursor-pointer text-sm leading-snug'
+                    >
+                      Also check in to{' '}
+                      <span className='font-semibold'>
+                        {activeService.name}
+                      </span>{' '}
+                      immediately
+                    </Label>
                   </div>
                 )}
 
@@ -920,22 +1107,29 @@ export function DeskPage() {
               </CardHeader>
               {activeId && (
                 <CardContent className='pt-0'>
-                  <Button
-                    type='button'
-                    variant='outline'
-                    size='sm'
-                    disabled={busy}
-                    onClick={() =>
-                      void manualCheckin(
-                        person,
-                        'Registered at desk',
-                        'VISITOR_DESK_REGISTRATION'
-                      )
-                    }
-                  >
-                    <UserCheck className='size-4' />
-                    Check in to open service
-                  </Button>
+                  {checkedInPersonId === person.id ? (
+                    <div className='inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'>
+                      <CheckCircle2 className='size-3.5' aria-hidden='true' />
+                      Checked in to {activeService?.name ?? 'open service'}
+                    </div>
+                  ) : (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      disabled={busy}
+                      onClick={() =>
+                        void manualCheckin(
+                          person,
+                          'Registered at desk',
+                          'VISITOR_DESK_REGISTRATION'
+                        )
+                      }
+                    >
+                      <UserCheck className='size-4' />
+                      Check in to open service
+                    </Button>
+                  )}
                 </CardContent>
               )}
             </Card>
@@ -980,6 +1174,23 @@ export function DeskPage() {
                         }
                         placeholder='Forgot card at home'
                       />
+                      <div className='flex flex-wrap gap-1.5 pt-0.5'>
+                        {MANUAL_REASON_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type='button'
+                            onClick={() => setManualReason(preset)}
+                            className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                              manualReason.trim().toLowerCase() ===
+                              preset.toLowerCase()
+                                ? 'border-primary bg-primary/10 text-foreground'
+                                : 'bg-background text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className='space-y-3'>
                       {candidates.map((match) => (
@@ -1103,15 +1314,40 @@ export function DeskPage() {
                         }
                         placeholder='Forgot card at home'
                       />
+                      <div className='flex flex-wrap gap-1.5 pt-0.5'>
+                        {MANUAL_REASON_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type='button'
+                            onClick={() => setManualReason(preset)}
+                            className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                              manualReason.trim().toLowerCase() ===
+                              preset.toLowerCase()
+                                ? 'border-primary bg-primary/10 text-foreground'
+                                : 'bg-background text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <Button
-                      type='button'
-                      disabled={busy || manualReason.trim().length < 3}
-                      onClick={() => void manualCheckin(selectedMember)}
-                    >
-                      <UserCheck className='size-4' />
-                      Check in
-                    </Button>
+                    <div className='flex flex-wrap items-center gap-2'>
+                      <Button
+                        type='button'
+                        disabled={busy || manualReason.trim().length < 3}
+                        onClick={() => void manualCheckin(selectedMember)}
+                      >
+                        <UserCheck className='size-4' />
+                        Check in
+                      </Button>
+                      <Button variant='outline' size='sm' asChild>
+                        <Link to='/cards'>
+                          <CreditCard className='size-3.5' />
+                          Manage cards
+                        </Link>
+                      </Button>
+                    </div>
                   </>
                 ) : (
                   <p className='text-sm text-muted-foreground'>

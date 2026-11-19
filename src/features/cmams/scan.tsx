@@ -10,6 +10,9 @@ import {
   Clock,
   Keyboard,
   ScanLine,
+  UserPlus,
+  Volume2,
+  VolumeX,
   XCircle,
 } from 'lucide-react'
 import { api } from '@/lib/cmams-api'
@@ -18,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { describeScanOutcome } from './format'
+import { describeScanOutcome, formatStage, stageBadgeClass } from './format'
 import { ChurchPage } from './pages'
 import { QueryState } from './query-state'
 import { createScanLock } from './scan-lock'
@@ -41,7 +44,19 @@ const MANUAL_REASON_PRESETS = [
   'Awaiting card',
 ] as const
 
-function signal(outcome: string) {
+function formatShortCodeInput(raw: string, previous: string) {
+  const cleaned = raw.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6)
+  if (cleaned.length <= 3) {
+    if (cleaned.length === 3 && raw.endsWith('-') && previous.length <= raw.length) {
+      return `${cleaned}-`
+    }
+    return cleaned
+  }
+  return `${cleaned.slice(0, 3)}-${cleaned.slice(3)}`
+}
+
+function signal(outcome: string, soundEnabled: boolean) {
+  if (!soundEnabled) return
   try {
     const context = new AudioContext()
     const oscillator = context.createOscillator()
@@ -75,6 +90,8 @@ export function ScanPage() {
   const [shortCode, setShortCode] = useState('')
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState('')
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [flashTone, setFlashTone] = useState<'good' | 'duplicate' | 'bad' | null>(null)
   const [status, setStatus] = useState<Outcome | null>(null)
   const [recent, setRecent] = useState<RecentScan[]>([])
   const [busy, setBusy] = useState(false)
@@ -91,8 +108,30 @@ export function ScanPage() {
   })
   const inFlight = useRef(false)
   const video = useRef<HTMLVideoElement>(null)
+  const shortCodeRef = useRef<HTMLInputElement>(null)
+  const memberSearchRef = useRef<HTMLInputElement>(null)
+  const manualReasonRef = useRef<HTMLInputElement>(null)
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cooldown = useRef(createScanLock())
   const wedge = useRef({ text: '', last: 0 })
+
+  const triggerFlash = useCallback((outcome: string) => {
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    setFlashTone(
+      outcome === 'CHECKED_IN'
+        ? 'good'
+        : outcome === 'ALREADY_CHECKED_IN'
+          ? 'duplicate'
+          : 'bad'
+    )
+    flashTimer.current = setTimeout(() => setFlashTone(null), 700)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current)
+    }
+  }, [])
   const openServices =
     services.data?.services.filter((item) => item.status === 'CHECKIN_OPEN') ??
     []
@@ -146,7 +185,8 @@ export function ScanPage() {
         )
         setStatus(response)
         pushRecent(response, displayCode)
-        signal(response.outcome)
+        triggerFlash(response.outcome)
+        signal(response.outcome, soundEnabled)
         if (response.outcome === 'CHECKED_IN') {
           void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
           void queryClient.invalidateQueries({ queryKey: ['analytics'] })
@@ -162,12 +202,13 @@ export function ScanPage() {
         }
         setStatus(failure)
         pushRecent(failure, displayCode)
+        triggerFlash('NETWORK_ERROR')
       } finally {
         inFlight.current = false
         setBusy(false)
       }
     },
-    [activeId, pushRecent, queryClient]
+    [activeId, pushRecent, queryClient, soundEnabled, triggerFlash]
   )
 
   useEffect(() => {
@@ -252,6 +293,7 @@ export function ScanPage() {
     if (shortCode.trim()) {
       void checkIn(shortCode.trim())
       setShortCode('')
+      shortCodeRef.current?.focus()
     }
   }
 
@@ -286,11 +328,12 @@ export function ScanPage() {
       }
       setStatus(enriched)
       pushRecent(enriched, 'Manual lookup')
-      signal(response.outcome)
+      signal(response.outcome, soundEnabled)
       if (response.outcome === 'CHECKED_IN') {
         setManualReason('')
         setSelectedMember(null)
         setMemberSearch('')
+        memberSearchRef.current?.focus()
         await queryClient.invalidateQueries({ queryKey: ['scan-people'] })
         void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
         void queryClient.invalidateQueries({ queryKey: ['analytics'] })
@@ -362,6 +405,26 @@ export function ScanPage() {
                         : `${sessionRecordedCount} recorded this session`}
                     </span>
                   )}
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    className='h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground'
+                    aria-pressed={!soundEnabled}
+                    onClick={() => setSoundEnabled((enabled) => !enabled)}
+                  >
+                    {soundEnabled ? (
+                      <>
+                        <Volume2 className='size-3.5' aria-hidden='true' />
+                        Sound on
+                      </>
+                    ) : (
+                      <>
+                        <VolumeX className='size-3.5' aria-hidden='true' />
+                        Muted
+                      </>
+                    )}
+                  </Button>
                 </div>
               )}
             </div>
@@ -411,12 +474,12 @@ export function ScanPage() {
           <div
             role='status'
             aria-live='assertive'
-            className={`flex items-start gap-3.5 rounded-xl border p-4 shadow-2xs ${
+            className={`sticky top-2 z-20 flex items-start gap-3.5 rounded-xl border p-4 shadow-md backdrop-blur-sm ${
               good
-                ? 'border-emerald-500/60 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/60 dark:text-emerald-100'
+                ? 'border-emerald-500/60 bg-emerald-50/95 text-emerald-950 dark:bg-emerald-950/90 dark:text-emerald-100'
                 : duplicate
-                  ? 'border-amber-500/60 bg-amber-50 text-amber-950 dark:bg-amber-950/60 dark:text-amber-100'
-                  : 'border-rose-500/60 bg-rose-50 text-rose-950 dark:bg-rose-950/60 dark:text-rose-100'
+                  ? 'border-amber-500/60 bg-amber-50/95 text-amber-950 dark:bg-amber-950/90 dark:text-amber-100'
+                  : 'border-rose-500/60 bg-rose-50/95 text-rose-950 dark:bg-rose-950/90 dark:text-rose-100'
             }`}
           >
             {good ? (
@@ -451,7 +514,17 @@ export function ScanPage() {
         <div className='grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]'>
           <Card className='h-fit overflow-hidden'>
             <CardContent className='space-y-5 pt-6'>
-              <div className='relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-xl bg-slate-950 text-sky-300 sm:min-h-[340px]'>
+              <div
+                className={`relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-xl bg-slate-950 text-sky-300 transition-shadow duration-200 sm:min-h-[340px] ${
+                  flashTone === 'good'
+                    ? 'ring-4 ring-emerald-400'
+                    : flashTone === 'duplicate'
+                      ? 'ring-4 ring-amber-400'
+                      : flashTone === 'bad'
+                        ? 'ring-4 ring-rose-500'
+                        : ''
+                }`}
+              >
                 <video
                   ref={video}
                   muted
@@ -524,12 +597,16 @@ export function ScanPage() {
                   <Label htmlFor='short-code'>Card code (shortcode)</Label>
                   <div className='flex flex-wrap gap-2'>
                     <Input
+                      ref={shortCodeRef}
                       id='short-code'
                       value={shortCode}
                       onChange={(event) =>
-                        setShortCode(event.target.value.toUpperCase())
+                        setShortCode((prev) =>
+                          formatShortCodeInput(event.target.value, prev)
+                        )
                       }
                       placeholder='9K4-M7X'
+                      maxLength={7}
                       autoComplete='off'
                       className='max-w-[220px] font-mono tracking-wider uppercase'
                     />
@@ -565,6 +642,7 @@ export function ScanPage() {
                     Search by name or phone
                   </Label>
                   <Input
+                    ref={memberSearchRef}
                     id='scan-member-search'
                     value={memberSearch}
                     autoComplete='off'
@@ -590,9 +668,20 @@ export function ScanPage() {
                       Search failed. Try again.
                     </p>
                   ) : !memberResults.data?.people.length ? (
-                    <p className='text-sm text-muted-foreground'>
-                      No matching profiles found.
-                    </p>
+                    <div className='flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed p-3 text-sm'>
+                      <p className='text-muted-foreground'>
+                        No matching profiles found.
+                      </p>
+                      <Button variant='outline' size='sm' asChild>
+                        <Link
+                          to='/desk'
+                          search={{ q: memberSearch.trim() } as never}
+                        >
+                          <UserPlus className='size-3.5' />
+                          Register at Desk
+                        </Link>
+                      </Button>
+                    </div>
                   ) : (
                     <div className='space-y-2'>
                       {memberResults.data.people.map((person) => (
@@ -603,16 +692,33 @@ export function ScanPage() {
                           onClick={() => {
                             setSelectedMember(person)
                             setStatus(null)
+                            requestAnimationFrame(() =>
+                              manualReasonRef.current?.focus()
+                            )
                           }}
                           className='block w-full rounded-lg border p-3 text-left text-sm transition-colors hover:bg-muted/40 aria-pressed:border-primary aria-pressed:bg-muted/30'
                         >
-                          <span className='font-semibold'>
-                            {person.first_name} {person.last_name}
-                          </span>
-                          <span className='ml-2 font-mono text-muted-foreground'>
-                            {person.member_code}
-                          </span>
-                          <span className='block text-xs text-muted-foreground'>
+                          <div className='flex flex-wrap items-center justify-between gap-2'>
+                            <div className='flex flex-wrap items-center gap-2'>
+                              <span className='font-semibold'>
+                                {person.first_name} {person.last_name}
+                              </span>
+                              <span className='font-mono text-xs text-muted-foreground'>
+                                {person.member_code}
+                              </span>
+                            </div>
+                            {person.lifecycle_stage && (
+                              <Badge
+                                variant='outline'
+                                className={stageBadgeClass(
+                                  person.lifecycle_stage
+                                )}
+                              >
+                                {formatStage(person.lifecycle_stage)}
+                              </Badge>
+                            )}
+                          </div>
+                          <span className='mt-0.5 block text-xs text-muted-foreground'>
                             Phone: {person.phone ?? 'Not provided'}
                           </span>
                         </button>
@@ -633,6 +739,7 @@ export function ScanPage() {
                         Reason for manual check-in
                       </Label>
                       <Input
+                        ref={manualReasonRef}
                         id='scan-manual-reason'
                         maxLength={500}
                         value={manualReason}
@@ -642,16 +749,25 @@ export function ScanPage() {
                         placeholder='Forgot QR card'
                       />
                       <div className='flex flex-wrap gap-1.5 pt-0.5'>
-                        {MANUAL_REASON_PRESETS.map((preset) => (
-                          <button
-                            key={preset}
-                            type='button'
-                            onClick={() => setManualReason(preset)}
-                            className='rounded-md border bg-background px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground'
-                          >
-                            {preset}
-                          </button>
-                        ))}
+                        {MANUAL_REASON_PRESETS.map((preset) => {
+                          const isPresetActive =
+                            manualReason.trim().toLowerCase() ===
+                            preset.toLowerCase()
+                          return (
+                            <button
+                              key={preset}
+                              type='button'
+                              onClick={() => setManualReason(preset)}
+                              className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                                isPresetActive
+                                  ? 'border-primary bg-primary/10 text-foreground'
+                                  : 'bg-background text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              {preset}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
                     <Button

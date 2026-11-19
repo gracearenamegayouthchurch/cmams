@@ -1051,8 +1051,8 @@ describe('CMAMS browser workflows', () => {
       .toBeDisabled()
   })
 
-  it('explains phone format before submitting a registration', async () => {
-    let registrationPosts = 0
+  it('explains phone format before submitting invalid numbers and normalizes local Nigerian phones', async () => {
+    const submittedBodies: { phone?: string | null }[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1066,19 +1066,41 @@ describe('CMAMS browser workflows', () => {
         if (url === '/api/v1/cells') return jsonResponse({ cells: [] })
         if (url === '/api/v1/services') return jsonResponse({ services: [] })
         if (url === '/api/v1/people' && init?.method === 'POST') {
-          registrationPosts++
-          return jsonResponse({ error: 'Invalid request' }, 400)
+          submittedBodies.push(
+            JSON.parse(String(init.body)) as { phone?: string | null }
+          )
+          return jsonResponse(
+            {
+              person: {
+                id: 'person-phone-1',
+                member_code: 'CM-2050',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                lifecycle_stage: 'FIRST_TIMER',
+              },
+            },
+            201
+          )
         }
+        if (url.endsWith('/cards') && init?.method === 'POST')
+          return jsonResponse(
+            {
+              card: {
+                memberCode: 'CM-2050',
+                shortCode: 'PHN-123',
+                credential: 'cma://v1/abcdefghijklmnopqrstuv',
+              },
+            },
+            201
+          )
         return jsonResponse({ error: 'Unexpected request' }, 404)
       })
     )
     const screen = await renderWithShell(<DeskPage />)
     await userEvent.type(screen.getByLabelText('First name'), 'Ada')
     await userEvent.type(screen.getByLabelText('Last name'), 'Okafor')
-    await userEvent.type(
-      screen.getByLabelText('Phone number (optional)'),
-      '08031234567'
-    )
+    const phoneInput = screen.getByLabelText('Phone number (optional)')
+    await userEvent.type(phoneInput, '080312')
     await userEvent.type(screen.getByLabelText('Email'), 'ada@example.org')
     await userEvent.click(screen.getByLabelText('Region'))
     await userEvent.click(page.getByRole('option', { name: 'Ndar' }))
@@ -1094,8 +1116,19 @@ describe('CMAMS browser workflows', () => {
     )
     await expect
       .element(screen.getByRole('alert'))
-      .toHaveTextContent(/phone number with country code and no spaces/i)
-    expect(registrationPosts).toBe(0)
+      .toHaveTextContent(/valid phone number/i)
+    expect(submittedBodies).toHaveLength(0)
+
+    await userEvent.clear(phoneInput)
+    await userEvent.type(phoneInput, '0803 123 4567')
+    await expect
+      .element(screen.getByText('+2348031234567', { exact: true }))
+      .toBeVisible()
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Register person' })
+    )
+    await expect.poll(() => submittedBodies.length).toBe(1)
+    expect(submittedBodies[0].phone).toBe('+2348031234567')
   })
 
   it('toggles between new and existing members and checks an existing member in', async () => {
@@ -2267,5 +2300,262 @@ describe('CMAMS browser workflows', () => {
     await expect
       .element(screen.getByAltText(/Attendance card for CM-1009/))
       .toBeVisible()
+  })
+
+  it('auto-formats shortcodes, toggles sound, and links to desk when scan search finds nobody', async () => {
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Sunday Service',
+                status: 'CHECKIN_OPEN',
+                category: 'SUNDAY_SERVICE',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+              },
+            ],
+          })
+        if (url.startsWith('/api/v1/people?'))
+          return jsonResponse({ people: [] })
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<ScanPage />)
+    const codeInput = screen.getByLabelText(/card code/i)
+    await userEvent.type(codeInput, '9k4m7x')
+    await expect.element(codeInput).toHaveValue('9K4-M7X')
+
+    await userEvent.click(screen.getByRole('button', { name: /sound on/i }))
+    await expect
+      .element(screen.getByRole('button', { name: /muted/i }))
+      .toBeVisible()
+
+    await userEvent.type(
+      screen.getByLabelText('Search by name or phone'),
+      'Unknown Visitor'
+    )
+    await expect
+      .element(screen.getByRole('link', { name: /Register at Desk/i }))
+      .toBeVisible()
+  })
+
+  it('auto-checks in on registration when a service is open and surfaces 409 duplicates automatically', async () => {
+    const serviceId = '9ff41440-0d63-428e-ad12-039d0c244ca8'
+    const checkinBodies: unknown[] = []
+    let failDuplicateOnce = true
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/v1/catalogs')
+          return jsonResponse({
+            compounds: [],
+            departments: [],
+            regions: [{ code: 'ACROSS', label: 'Across' }],
+          })
+        if (url === '/api/v1/cells') return jsonResponse({ cells: [] })
+        if (url === '/api/v1/services')
+          return jsonResponse({
+            services: [
+              {
+                id: serviceId,
+                name: 'Sunday Service',
+                status: 'CHECKIN_OPEN',
+                category: 'SUNDAY_SERVICE',
+                scheduled_start_at: '2026-10-25T08:00:00Z',
+                checkin_opens_at: '2026-10-25T07:00:00Z',
+                checkin_closes_at: '2026-10-25T11:00:00Z',
+              },
+            ],
+          })
+        if (url === '/api/v1/people' && init?.method === 'POST') {
+          if (failDuplicateOnce) {
+            failDuplicateOnce = false
+            return jsonResponse(
+              {
+                error: 'Possible duplicate.',
+                matches: [
+                  {
+                    id: 'dup-1',
+                    member_code: 'CM-1001',
+                    first_name: 'Ada',
+                    last_name: 'Okafor',
+                    lifecycle_stage: 'MEMBER',
+                    shared_phone: false,
+                  },
+                ],
+              },
+              409
+            )
+          }
+          return jsonResponse(
+            {
+              person: {
+                id: 'new-1',
+                member_code: 'CM-2100',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                lifecycle_stage: 'FIRST_TIMER',
+              },
+            },
+            201
+          )
+        }
+        if (url.endsWith('/cards') && init?.method === 'POST')
+          return jsonResponse(
+            {
+              card: {
+                memberCode: 'CM-2100',
+                shortCode: 'NEW-210',
+                credential: 'cma://v1/abcdefghijklmnopqrstuv',
+              },
+            },
+            201
+          )
+        if (url.endsWith('/manual-check-ins') && init?.method === 'POST') {
+          checkinBodies.push(JSON.parse(String(init.body)))
+          return jsonResponse({ outcome: 'CHECKED_IN' })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<DeskPage />)
+    await expect
+      .element(screen.getByLabelText(/Also check in to Sunday Service/i))
+      .toHaveAttribute('aria-checked', 'true')
+    await userEvent.type(screen.getByLabelText('First name'), 'Ada')
+    await userEvent.type(screen.getByLabelText('Last name'), 'Okafor')
+    await userEvent.type(screen.getByLabelText('Email'), 'ada2@example.org')
+    await userEvent.click(screen.getByLabelText('Region'))
+    await userEvent.click(page.getByRole('option', { name: 'Across' }))
+    await userEvent.type(screen.getByLabelText('Compound'), 'Stone city')
+    await userEvent.click(screen.getByLabelText('Birth month'))
+    await userEvent.click(page.getByRole('option', { name: 'March' }))
+    await userEvent.type(screen.getByLabelText('Birth day'), '12')
+    await userEvent.click(
+      screen.getByLabelText('Person agrees to this privacy notice')
+    )
+
+    // First submit returns 409 with matches -> surfaces duplicate automatically
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Register person' })
+    )
+    await expect.element(screen.getByText('CM-1001')).toBeVisible()
+
+    // Confirm distinct and submit -> registers, issues card, and auto-checks in
+    await userEvent.click(
+      screen.getByLabelText(
+        'I checked the matches and confirm this is a different person'
+      )
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Register person' })
+    )
+    await expect
+      .element(screen.getByText('Registered, card generated, and checked in.'))
+      .toBeVisible()
+    await expect
+      .element(screen.getByText('Checked in to Sunday Service'))
+      .toBeVisible()
+    expect(checkinBodies).toHaveLength(1)
+    expect(checkinBodies[0]).toMatchObject({
+      personId: 'new-1',
+      method: 'VISITOR_DESK_REGISTRATION',
+    })
+  })
+
+  it('filters active cards by scan activity and batch-issues selected unissued members', async () => {
+    const issuedIds: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/v1/cards')) {
+          return jsonResponse({
+            cards: [
+              {
+                id: 'c1',
+                short_code: 'AAA-111',
+                person_id: 'p1',
+                member_code: 'CM-1001',
+                first_name: 'Scanned',
+                last_name: 'Member',
+                lifecycle_stage: 'MEMBER',
+                scan_count: 5,
+              },
+              {
+                id: 'c2',
+                short_code: 'BBB-222',
+                person_id: 'p2',
+                member_code: 'CM-1002',
+                first_name: 'Fresh',
+                last_name: 'Visitor',
+                lifecycle_stage: 'FIRST_TIMER',
+                scan_count: 0,
+              },
+            ],
+            unissued: [
+              {
+                id: 'u1',
+                member_code: 'CM-1003',
+                first_name: 'Grace',
+                last_name: 'One',
+                lifecycle_stage: 'FIRST_TIMER',
+                registered_at: '2026-10-20T09:00:00Z',
+              },
+              {
+                id: 'u2',
+                member_code: 'CM-1004',
+                first_name: 'Grace',
+                last_name: 'Two',
+                lifecycle_stage: 'MEMBER',
+                registered_at: '2026-10-21T09:00:00Z',
+              },
+            ],
+          })
+        }
+        if (url.endsWith('/cards') && init?.method === 'POST') {
+          const match = /\/people\/([^/]+)\/cards$/.exec(url)
+          const pid = match?.[1] ?? 'unknown'
+          issuedIds.push(pid)
+          return jsonResponse({
+            card: {
+              memberCode: pid === 'u1' ? 'CM-1003' : 'CM-1004',
+              shortCode: pid === 'u1' ? 'GR1-AAA' : 'GR2-BBB',
+              credential: `cma://v1/${'D'.repeat(22)}`,
+            },
+          })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<CardsPage />)
+    await expect.element(screen.getByText('Scanned Member')).toBeVisible()
+    await expect.element(screen.getByText('Fresh Visitor')).toBeVisible()
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Never scanned' })
+    )
+    expect(screen.getByText('Scanned Member').query()).toBeNull()
+    await expect.element(screen.getByText('Fresh Visitor')).toBeVisible()
+
+    await userEvent.click(screen.getByRole('tab', { name: /Unissued members/i }))
+    await userEvent.click(screen.getByLabelText('Select Grace One'))
+    await userEvent.click(screen.getByLabelText('Select Grace Two'))
+    await userEvent.click(
+      screen.getByRole('button', { name: /Issue selected \(2\)/i })
+    )
+    await expect.poll(() => issuedIds.length).toBe(2)
+    expect(issuedIds).toEqual(['u1', 'u2'])
   })
 })

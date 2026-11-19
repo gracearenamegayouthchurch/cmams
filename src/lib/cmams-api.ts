@@ -17,7 +17,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    readonly data?: unknown
   ) {
     super(message)
   }
@@ -76,7 +77,7 @@ export async function api<T>(
       typeof result.code === 'string'
         ? result.code
         : undefined
-    throw new ApiError(message, response.status, code)
+    throw new ApiError(message, response.status, code, result)
   }
   return response.json() as Promise<T>
 }

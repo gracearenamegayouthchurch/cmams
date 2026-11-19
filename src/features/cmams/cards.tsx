@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -105,6 +105,43 @@ function formatShortDate(iso?: string | null, withTime = false) {
     year: 'numeric',
     ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}),
   })
+}
+
+function ShortCodePill({
+  code,
+  className = '',
+}: {
+  code: string
+  className?: string
+}) {
+  const [copied, setCopied] = useState(false)
+
+  function copyCode() {
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        setCopied(true)
+        toast.success(`Copied ${code}`)
+        setTimeout(() => setCopied(false), 1800)
+      })
+      .catch(() => toast.error('Could not copy shortcode'))
+  }
+
+  return (
+    <button
+      type='button'
+      onClick={copyCode}
+      title={`Copy shortcode ${code}`}
+      className={`inline-flex items-center gap-1 rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-xs font-semibold text-foreground transition-colors hover:bg-muted ${className}`}
+    >
+      <span>{code}</span>
+      {copied ? (
+        <Check className='size-3 text-emerald-600' aria-hidden='true' />
+      ) : (
+        <Copy className='size-3 opacity-60' aria-hidden='true' />
+      )}
+    </button>
+  )
 }
 
 function shareCardDetails(
@@ -230,9 +267,7 @@ export function CardDownloads({
               {card.memberName ? ` (${card.memberName})` : ''}
             </CardTitle>
           </div>
-          <Badge variant='outline' className='bg-background font-mono'>
-            {card.shortCode}
-          </Badge>
+          <ShortCodePill code={card.shortCode} className='bg-background' />
         </div>
         <CardDescription>
           Download or print this badge now. For security, the full QR
@@ -382,9 +417,7 @@ function CardPreviewModal({
         <DialogHeader>
           <div className='flex items-center justify-between gap-2 pr-6'>
             <DialogTitle>Member check-in card</DialogTitle>
-            <Badge variant='outline' className='font-mono'>
-              {card.short_code}
-            </Badge>
+            <ShortCodePill code={card.short_code} />
           </div>
           <DialogDescription>
             {card.first_name} {card.last_name} · {card.member_code}
@@ -542,7 +575,14 @@ function CardPreviewModal({
 
 export function CardsPage() {
   const queryClient = useQueryClient()
+  const issuedRef = useRef<HTMLDivElement>(null)
   const [activeTab, setActiveTab] = useState<'active' | 'unissued'>('active')
+  const [activeFilter, setActiveFilter] = useState<
+    'ALL' | 'MEMBER' | 'FIRST_TIMER' | 'UNSCANNED'
+  >('ALL')
+  const [unissuedFilter, setUnissuedFilter] = useState<
+    'ALL' | 'MEMBER' | 'FIRST_TIMER'
+  >('ALL')
   const [personSearch, setPersonSearch] = useState('')
   const [search, setSearch] = useState('')
   const [unissuedSearch, setUnissuedSearch] = useState('')
@@ -553,7 +593,23 @@ export function CardsPage() {
   const [revokeTarget, setRevokeTarget] = useState<ActiveCard | null>(null)
   const [previewTarget, setPreviewTarget] = useState<ActiveCard | null>(null)
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set())
+  const [selectedUnissued, setSelectedUnissued] = useState<Set<string>>(
+    new Set()
+  )
   const [batchPdfBusy, setBatchPdfBusy] = useState(false)
+  const [batchIssueProgress, setBatchIssueProgress] = useState<{
+    done: number
+    total: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (issued) {
+      issuedRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      })
+    }
+  }, [issued])
 
   const trimmedPersonSearch = personSearch.trim()
   const debouncedPersonSearch = useDebouncedValue(trimmedPersonSearch)
@@ -627,25 +683,137 @@ export function CardsPage() {
   const activeCardByPersonId = new Map(
     allActiveCards.map((card) => [card.person_id, card] as const)
   )
-  const visibleCardIds = new Set(allActiveCards.map((card) => card.id))
-  const visibleSelectedCards = allActiveCards.filter((card) =>
+  const visibleActiveCards = allActiveCards.filter((card) => {
+    if (activeFilter === 'MEMBER') return card.lifecycle_stage === 'MEMBER'
+    if (activeFilter === 'FIRST_TIMER')
+      return card.lifecycle_stage === 'FIRST_TIMER'
+    if (activeFilter === 'UNSCANNED') return (card.scan_count ?? 0) === 0
+    return true
+  })
+  const visibleCardIds = new Set(visibleActiveCards.map((card) => card.id))
+  const visibleSelectedCards = visibleActiveCards.filter((card) =>
     selectedCards.has(card.id)
   )
   const allVisibleSelected =
-    allActiveCards.length > 0 &&
-    visibleSelectedCards.length === allActiveCards.length
+    visibleActiveCards.length > 0 &&
+    visibleSelectedCards.length === visibleActiveCards.length
 
-  const filteredUnissued = debouncedUnissuedSearch
-    ? allUnissued.filter((person) => {
-        const query = debouncedUnissuedSearch.toLowerCase()
-        const fullName =
-          `${person.first_name} ${person.last_name}`.toLowerCase()
-        return (
-          fullName.includes(query) ||
-          person.member_code.toLowerCase().includes(query)
-        )
+  const filteredUnissued = allUnissued.filter((person) => {
+    if (unissuedFilter === 'MEMBER' && person.lifecycle_stage !== 'MEMBER')
+      return false
+    if (
+      unissuedFilter === 'FIRST_TIMER' &&
+      person.lifecycle_stage !== 'FIRST_TIMER'
+    )
+      return false
+    if (!debouncedUnissuedSearch) return true
+    const query = debouncedUnissuedSearch.toLowerCase()
+    const fullName = `${person.first_name} ${person.last_name}`.toLowerCase()
+    return (
+      fullName.includes(query) ||
+      person.member_code.toLowerCase().includes(query)
+    )
+  })
+  const visibleUnissuedIds = new Set(filteredUnissued.map((p) => p.id))
+  const visibleSelectedUnissued = filteredUnissued.filter((person) =>
+    selectedUnissued.has(person.id)
+  )
+  const allVisibleUnissuedSelected =
+    filteredUnissued.length > 0 &&
+    visibleSelectedUnissued.length === filteredUnissued.length
+
+  function toggleUnissuedSelection(id: string) {
+    setSelectedUnissued((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllUnissued() {
+    if (allVisibleUnissuedSelected) {
+      setSelectedUnissued((prev) => {
+        const next = new Set(prev)
+        for (const id of visibleUnissuedIds) next.delete(id)
+        return next
       })
-    : allUnissued
+    } else {
+      setSelectedUnissued((prev) => {
+        const next = new Set(prev)
+        for (const id of visibleUnissuedIds) next.add(id)
+        return next
+      })
+    }
+  }
+
+  async function handleBatchIssue(exportPdf: boolean) {
+    const targets =
+      visibleSelectedUnissued.length > 0
+        ? visibleSelectedUnissued
+        : filteredUnissued
+    if (!targets.length || batchIssueProgress) return
+
+    setBatchIssueProgress({ done: 0, total: targets.length })
+    const minted: IssuedCard[] = []
+    let failed = 0
+    try {
+      for (let index = 0; index < targets.length; index++) {
+        const person = targets[index]
+        try {
+          const response = await api<{ card: IssuedCard }>(
+            `/api/v1/people/${person.id}/cards`,
+            { method: 'POST', body: '{}' }
+          )
+          minted.push({
+            ...response.card,
+            memberName:
+              response.card.memberName ||
+              `${person.first_name} ${person.last_name}`,
+            phone: response.card.phone ?? person.phone_e164 ?? person.phone,
+          })
+        } catch {
+          failed++
+        }
+        setBatchIssueProgress({ done: index + 1, total: targets.length })
+      }
+
+      if (minted.length > 0) {
+        setSelectedUnissued(new Set())
+        await queryClient.invalidateQueries({ queryKey: ['cards'] })
+        if (exportPdf) {
+          const bytes = await renderBatchCardsPdf(minted)
+          downloadBlob(
+            new Blob([Uint8Array.from(bytes).buffer], {
+              type: 'application/pdf',
+            }),
+            `grace-arena-issued-cards-${minted.length}.pdf`
+          )
+          toast.success(
+            `Issued ${minted.length} ${
+              minted.length === 1 ? 'card' : 'cards'
+            } and downloaded the A4 sheet.`
+          )
+        } else {
+          toast.success(
+            `Issued ${minted.length} ${minted.length === 1 ? 'card' : 'cards'}.`
+          )
+        }
+        if (minted.length === 1) {
+          setIssued(minted[0])
+        }
+      }
+      if (failed > 0) {
+        toast.error(
+          `${failed} ${failed === 1 ? 'card' : 'cards'} could not be issued.`
+        )
+      }
+    } catch {
+      toast.error('Batch card issuance could not complete.')
+    } finally {
+      setBatchIssueProgress(null)
+    }
+  }
 
   function toggleCardSelection(id: string) {
     setSelectedCards((prev) => {
@@ -674,7 +842,9 @@ export function CardsPage() {
 
   async function handleBatchPdf() {
     const targetCards =
-      visibleSelectedCards.length > 0 ? visibleSelectedCards : allActiveCards
+      visibleSelectedCards.length > 0
+        ? visibleSelectedCards
+        : visibleActiveCards
 
     if (!targetCards.length) {
       toast.error('No active cards to print.')
@@ -723,11 +893,13 @@ export function CardsPage() {
         )}
 
         {issued && (
-          <CardDownloads
-            key={issued.shortCode}
-            card={issued}
-            onBack={() => setIssued(null)}
-          />
+          <div ref={issuedRef}>
+            <CardDownloads
+              key={issued.shortCode}
+              card={issued}
+              onBack={() => setIssued(null)}
+            />
+          </div>
         )}
 
         <Card>
@@ -904,7 +1076,7 @@ export function CardsPage() {
               </button>
             </div>
 
-            {activeTab === 'active' && allActiveCards.length > 0 && (
+            {activeTab === 'active' && visibleActiveCards.length > 0 && (
               <div className='flex items-center gap-2'>
                 {visibleSelectedCards.length > 0 && (
                   <Button
@@ -929,7 +1101,51 @@ export function CardsPage() {
                     ? 'Preparing A4 sheet…'
                     : visibleSelectedCards.length > 0
                       ? `Print A4 sheet (${visibleSelectedCards.length})`
-                      : `Print all to A4 (${allActiveCards.length})`}
+                      : `Print all to A4 (${visibleActiveCards.length})`}
+                </Button>
+              </div>
+            )}
+
+            {activeTab === 'unissued' && filteredUnissued.length > 0 && (
+              <div className='flex flex-wrap items-center gap-2'>
+                {visibleSelectedUnissued.length > 0 && (
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    className='text-xs text-muted-foreground'
+                    disabled={!!batchIssueProgress}
+                    onClick={() => setSelectedUnissued(new Set())}
+                  >
+                    Clear ({visibleSelectedUnissued.length})
+                  </Button>
+                )}
+                {visibleSelectedUnissued.length > 0 && (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    disabled={!!batchIssueProgress || issue.isPending}
+                    onClick={() => void handleBatchIssue(false)}
+                  >
+                    <CreditCard className='size-4' />
+                    {batchIssueProgress
+                      ? `Issuing ${batchIssueProgress.done}/${batchIssueProgress.total}…`
+                      : `Issue selected (${visibleSelectedUnissued.length})`}
+                  </Button>
+                )}
+                <Button
+                  type='button'
+                  size='sm'
+                  disabled={!!batchIssueProgress || issue.isPending}
+                  onClick={() => void handleBatchIssue(true)}
+                >
+                  <FileText className='size-4' />
+                  {batchIssueProgress
+                    ? `Issuing ${batchIssueProgress.done}/${batchIssueProgress.total}…`
+                    : visibleSelectedUnissued.length > 0
+                      ? `Issue & export A4 (${visibleSelectedUnissued.length})`
+                      : `Issue all & export A4 (${filteredUnissued.length})`}
                 </Button>
               </div>
             )}
@@ -954,7 +1170,7 @@ export function CardsPage() {
                     />
                   </div>
 
-                  {allActiveCards.length > 0 && (
+                  {visibleActiveCards.length > 0 && (
                     <Button
                       type='button'
                       variant='ghost'
@@ -970,12 +1186,41 @@ export function CardsPage() {
                       ) : (
                         <>
                           <Square className='mr-1.5 size-3.5' />
-                          Select all ({allActiveCards.length})
+                          Select all ({visibleActiveCards.length})
                         </>
                       )}
                     </Button>
                   )}
                 </div>
+                {allActiveCards.length > 0 && (
+                  <div
+                    role='group'
+                    aria-label='Filter active cards by stage or scan activity'
+                    className='flex flex-wrap gap-1.5'
+                  >
+                    {(
+                      [
+                        ['ALL', 'All'],
+                        ['MEMBER', 'Members'],
+                        ['FIRST_TIMER', 'First-timers'],
+                        ['UNSCANNED', 'Never scanned'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type='button'
+                        onClick={() => setActiveFilter(key)}
+                        className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          activeFilter === key
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'bg-background text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 <QueryState
@@ -984,23 +1229,23 @@ export function CardsPage() {
                     cardsQuery.isPending
                   }
                   error={cardsQuery.error}
-                  empty={allActiveCards.length === 0}
+                  empty={visibleActiveCards.length === 0}
                   emptyTitle={
-                    search.trim()
+                    search.trim() || activeFilter !== 'ALL'
                       ? 'No matching active cards'
                       : 'No active cards yet'
                   }
                   emptyDescription={
-                    search.trim()
-                      ? 'Try another name, member code, or shortcode.'
+                    search.trim() || activeFilter !== 'ALL'
+                      ? 'Try clearing or adjusting your filter.'
                       : 'Issued check-in cards will appear here.'
                   }
                   onRetry={() => void cardsQuery.refetch()}
                 />
                 {search.trim() === debouncedCardSearch &&
-                  allActiveCards.length > 0 && (
+                  visibleActiveCards.length > 0 && (
                     <div className='divide-y rounded-xl border'>
-                      {allActiveCards.map((card) => {
+                      {visibleActiveCards.map((card) => {
                         const isSelected = selectedCards.has(card.id)
                         const share = buildWhatsAppShare({
                           first_name: card.first_name,
@@ -1050,9 +1295,7 @@ export function CardsPage() {
                                     {card.member_code}
                                   </span>
                                   <span>·</span>
-                                  <span className='rounded bg-muted px-1.5 py-0.5 font-mono font-semibold text-foreground'>
-                                    {card.short_code}
-                                  </span>
+                                  <ShortCodePill code={card.short_code} />
                                   {issuedDate && (
                                     <>
                                       <span>·</span>
@@ -1167,38 +1410,92 @@ export function CardsPage() {
                     {filteredUnissued.length} waiting
                   </Badge>
                 </div>
-                <div className='relative max-w-md'>
-                  <Search
-                    className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground'
-                    aria-hidden='true'
-                  />
-                  <Input
-                    aria-label='Filter unissued members'
-                    value={unissuedSearch}
-                    onChange={(event) => setUnissuedSearch(event.target.value)}
-                    placeholder='Filter by name or member code'
-                    className='pl-9'
-                  />
+                <div className='flex flex-wrap items-center justify-between gap-3'>
+                  <div className='relative max-w-md flex-1'>
+                    <Search
+                      className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground'
+                      aria-hidden='true'
+                    />
+                    <Input
+                      aria-label='Filter unissued members'
+                      value={unissuedSearch}
+                      onChange={(event) =>
+                        setUnissuedSearch(event.target.value)
+                      }
+                      placeholder='Filter by name or member code'
+                      className='pl-9'
+                    />
+                  </div>
+                  {filteredUnissued.length > 0 && (
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      size='sm'
+                      onClick={toggleSelectAllUnissued}
+                      className='text-xs text-muted-foreground'
+                    >
+                      {allVisibleUnissuedSelected ? (
+                        <>
+                          <CheckSquare className='mr-1.5 size-3.5' />
+                          Deselect all
+                        </>
+                      ) : (
+                        <>
+                          <Square className='mr-1.5 size-3.5' />
+                          Select all ({filteredUnissued.length})
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
+                {allUnissued.length > 0 && (
+                  <div
+                    role='group'
+                    aria-label='Filter unissued members by stage'
+                    className='flex flex-wrap gap-1.5'
+                  >
+                    {(
+                      [
+                        ['ALL', 'All'],
+                        ['MEMBER', 'Members'],
+                        ['FIRST_TIMER', 'First-timers'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type='button'
+                        onClick={() => setUnissuedFilter(key)}
+                        className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          unissuedFilter === key
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'bg-background text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {filteredUnissued.length === 0 ? (
                   <div className='rounded-xl border border-dashed p-8 text-center'>
                     <CreditCard className='mx-auto size-8 text-muted-foreground/60' />
                     <h3 className='mt-3 font-semibold text-foreground'>
-                      {unissuedSearch.trim()
-                        ? 'No unissued members match your search'
+                      {unissuedSearch.trim() || unissuedFilter !== 'ALL'
+                        ? 'No unissued members match your filter'
                         : 'All members have active cards!'}
                     </h3>
                     <p className='mt-1 text-sm text-muted-foreground'>
-                      {unissuedSearch.trim()
-                        ? 'Try clearing the search filter.'
+                      {unissuedSearch.trim() || unissuedFilter !== 'ALL'
+                        ? 'Try clearing or adjusting the filter.'
                         : 'Newly registered members and first-timers appear here until a card is issued.'}
                     </p>
                   </div>
                 ) : (
                   <div className='divide-y rounded-xl border'>
                     {filteredUnissued.map((person) => {
+                      const isSelected = selectedUnissued.has(person.id)
                       const isIssuingThis =
                         issue.isPending && issuingPersonId === person.id
                       const registeredDate = formatShortDate(
@@ -1207,47 +1504,61 @@ export function CardsPage() {
                       return (
                         <div
                           key={person.id}
-                          className='flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/35'
+                          className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors ${
+                            isSelected
+                              ? 'bg-sky-50/50 dark:bg-sky-950/20'
+                              : 'hover:bg-muted/35'
+                          }`}
                         >
-                          <div className='space-y-1'>
-                            <div className='flex flex-wrap items-center gap-2'>
-                              <span className='text-sm font-semibold text-foreground'>
-                                {person.first_name} {person.last_name}
-                              </span>
-                              <Badge
-                                variant='outline'
-                                className={stageBadgeClass(
-                                  person.lifecycle_stage
+                          <div className='flex items-center gap-3'>
+                            <Checkbox
+                              checked={isSelected}
+                              disabled={!!batchIssueProgress}
+                              onCheckedChange={() =>
+                                toggleUnissuedSelection(person.id)
+                              }
+                              aria-label={`Select ${person.first_name} ${person.last_name}`}
+                            />
+                            <div className='space-y-1'>
+                              <div className='flex flex-wrap items-center gap-2'>
+                                <span className='text-sm font-semibold text-foreground'>
+                                  {person.first_name} {person.last_name}
+                                </span>
+                                <Badge
+                                  variant='outline'
+                                  className={stageBadgeClass(
+                                    person.lifecycle_stage
+                                  )}
+                                >
+                                  {formatStage(person.lifecycle_stage)}
+                                </Badge>
+                              </div>
+                              <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
+                                <span className='font-mono font-medium'>
+                                  {person.member_code}
+                                </span>
+                                {person.phone && (
+                                  <>
+                                    <span>·</span>
+                                    <span className='tabular-nums'>
+                                      {person.phone}
+                                    </span>
+                                  </>
                                 )}
-                              >
-                                {formatStage(person.lifecycle_stage)}
-                              </Badge>
-                            </div>
-                            <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
-                              <span className='font-mono font-medium'>
-                                {person.member_code}
-                              </span>
-                              {person.phone && (
-                                <>
-                                  <span>·</span>
-                                  <span className='tabular-nums'>
-                                    {person.phone}
-                                  </span>
-                                </>
-                              )}
-                              {registeredDate && (
-                                <>
-                                  <span>·</span>
-                                  <span>Registered {registeredDate}</span>
-                                </>
-                              )}
+                                {registeredDate && (
+                                  <>
+                                    <span>·</span>
+                                    <span>Registered {registeredDate}</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
 
                           <Button
                             type='button'
                             size='sm'
-                            disabled={issue.isPending}
+                            disabled={issue.isPending || !!batchIssueProgress}
                             onClick={() => {
                               setIssued(null)
                               issue.mutate(person.id)

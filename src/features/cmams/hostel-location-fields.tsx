@@ -33,8 +33,14 @@ export function HostelLocationFields({
         <Select
           value={category}
           onValueChange={(entry) => {
-            setDraftCategory(entry as HostelCategory)
-            onChange('')
+            const nextCategory = entry as HostelCategory
+            setDraftCategory(nextCategory)
+            const buildings = HOSTEL_BUILDINGS[nextCategory]
+            if (buildings.length === 1) {
+              onChange(hostelName(nextCategory, buildings[0]))
+            } else {
+              onChange('')
+            }
           }}
         >
           <SelectTrigger id={`${prefix}-hostel-category`} className='w-full'>
