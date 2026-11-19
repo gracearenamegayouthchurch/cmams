@@ -425,3 +425,50 @@ it('returns an accurate attendance total and masks phone in history details', as
   expect(result?.person).not.toHaveProperty('phone_e164')
   expect(result?.history).toHaveLength(1)
 })
+
+it('registers an existing church member directly as MEMBER without queueing a first-timer welcome SMS', async () => {
+  const statements: { sql: string; params?: unknown[] }[] = []
+  const client = {
+    query: async (sql: string, params?: unknown[]) => {
+      statements.push({ sql, params })
+      if (sql.includes('FROM compounds WHERE normalized_name'))
+        return { rows: [{ id: 'compound', region: 'ACROSS', is_active: true }] }
+      if (sql.includes('INSERT INTO people'))
+        return {
+          rows: [
+            {
+              id: 'member-1',
+              member_code: 'CM-2001',
+              first_name: 'Ada',
+              last_name: 'Okafor',
+              lifecycle_stage: 'MEMBER',
+            },
+          ],
+        }
+      return { rows: [] }
+    },
+    release: () => {},
+  }
+  const db = { query: async () => ({ rows: [] }), connect: async () => client }
+  const person = await registerPerson(
+    db as never,
+    {
+      ...baseDetails,
+      phone: '+2348031234567',
+      lifecycleStage: 'MEMBER',
+    },
+    'staff'
+  )
+  expect(person.lifecycle_stage).toBe('MEMBER')
+  const peopleInsert = statements.find(({ sql }) =>
+    sql.includes('INSERT INTO people')
+  )
+  expect(peopleInsert?.params).toContain('MEMBER')
+  const historyInsert = statements.find(({ sql }) =>
+    sql.includes('INSERT INTO person_stage_history')
+  )
+  expect(historyInsert?.params).toContain('MEMBER')
+  expect(
+    statements.some(({ sql }) => sql.includes('INSERT INTO sms_outbox'))
+  ).toBe(false)
+})

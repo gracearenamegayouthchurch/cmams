@@ -91,6 +91,9 @@ export function DeskPage() {
   const [birthDay, setBirthDay] = useState('')
   const [birthYear, setBirthYear] = useState('')
   const [consent, setConsent] = useState(false)
+  const [lifecycleStage, setLifecycleStage] = useState<'FIRST_TIMER' | 'MEMBER'>(
+    'FIRST_TIMER'
+  )
   const [autoCheckIn, setAutoCheckIn] = useState(true)
   const [checkedInPersonId, setCheckedInPersonId] = useState<string | null>(
     null
@@ -196,6 +199,7 @@ export function DeskPage() {
     setBirthDay('')
     setBirthYear('')
     setConsent(false)
+    setLifecycleStage('FIRST_TIMER')
     setCandidates([])
     setConfirmed(false)
     setHouseholdId('')
@@ -294,6 +298,7 @@ export function DeskPage() {
           birthMonth: Number(birthMonth),
           birthDay: Number(birthDay),
           birthYear: birthYear ? Number(birthYear) : undefined,
+          lifecycleStage,
           consent,
           confirmDistinct: confirmed,
           ...(householdId ? { householdId } : {}),
@@ -548,6 +553,52 @@ export function DeskPage() {
                 onSubmit={(event) => void register(event)}
                 className='space-y-4'
               >
+                <div className='space-y-1.5'>
+                  <Label>Membership status</Label>
+                  <div
+                    role='group'
+                    aria-label='Membership status'
+                    className='grid grid-cols-2 gap-2'
+                  >
+                    {(
+                      [
+                        [
+                          'FIRST_TIMER',
+                          'First-timer',
+                          'Visiting for the first time',
+                        ],
+                        [
+                          'MEMBER',
+                          'Church member',
+                          'Already attends, not in database yet',
+                        ],
+                      ] as const
+                    ).map(([value, title, hint]) => {
+                      const active = lifecycleStage === value
+                      return (
+                        <button
+                          key={value}
+                          type='button'
+                          aria-pressed={active}
+                          onClick={() => setLifecycleStage(value)}
+                          className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                            active
+                              ? 'border-primary bg-primary/5 text-foreground'
+                              : 'bg-background text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                          }`}
+                        >
+                          <span className='block text-sm font-medium text-foreground'>
+                            {title}
+                          </span>
+                          <span className='block text-xs text-muted-foreground'>
+                            {hint}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 <div className='grid gap-4 sm:grid-cols-2'>
                   <div className='space-y-1.5'>
                     <Label htmlFor='first-name'>First name</Label>

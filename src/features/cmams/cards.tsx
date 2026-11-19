@@ -597,6 +597,8 @@ export function CardsPage() {
     new Set()
   )
   const [batchPdfBusy, setBatchPdfBusy] = useState(false)
+  const [bulkRevokeOpen, setBulkRevokeOpen] = useState(false)
+  const [bulkRevokeBusy, setBulkRevokeBusy] = useState(false)
   const [batchIssueProgress, setBatchIssueProgress] = useState<{
     done: number
     total: number
@@ -877,6 +879,60 @@ export function CardsPage() {
     }
   }
 
+  function handleCopySelectedList() {
+    if (!visibleSelectedCards.length) return
+    const lines = visibleSelectedCards.map(
+      (c) => `${c.first_name} ${c.last_name} · ${c.member_code} · ${c.short_code}`
+    )
+    navigator.clipboard
+      .writeText(lines.join('\n'))
+      .then(() =>
+        toast.success(
+          `Copied ${visibleSelectedCards.length} ${
+            visibleSelectedCards.length === 1 ? 'card' : 'cards'
+          } to clipboard`
+        )
+      )
+      .catch(() => toast.error('Could not copy to clipboard'))
+  }
+
+  async function handleBulkRevoke() {
+    const targets = visibleSelectedCards
+    if (!targets.length || bulkRevokeBusy) return
+    setBulkRevokeBusy(true)
+    let revoked = 0
+    let failed = 0
+    try {
+      for (const card of targets) {
+        try {
+          await api(`/api/v1/cards/${card.id}/revoke`, {
+            method: 'POST',
+            body: '{}',
+          })
+          revoked++
+        } catch {
+          failed++
+        }
+      }
+      setBulkRevokeOpen(false)
+      setSelectedCards(new Set())
+      setIssued(null)
+      await queryClient.invalidateQueries({ queryKey: ['cards'] })
+      if (revoked > 0) {
+        toast.success(
+          `Revoked ${revoked} ${revoked === 1 ? 'card' : 'cards'}.`
+        )
+      }
+      if (failed > 0) {
+        toast.error(
+          `${failed} ${failed === 1 ? 'card' : 'cards'} could not be revoked.`
+        )
+      }
+    } finally {
+      setBulkRevokeBusy(false)
+    }
+  }
+
   return (
     <ChurchPage
       title='Member cards'
@@ -1076,79 +1132,42 @@ export function CardsPage() {
               </button>
             </div>
 
-            {activeTab === 'active' && visibleActiveCards.length > 0 && (
-              <div className='flex items-center gap-2'>
-                {visibleSelectedCards.length > 0 && (
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    size='sm'
-                    className='text-xs text-muted-foreground'
-                    onClick={() => setSelectedCards(new Set())}
-                  >
-                    Clear ({visibleSelectedCards.length})
-                  </Button>
-                )}
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  disabled={batchPdfBusy}
-                  onClick={() => void handleBatchPdf()}
-                >
-                  <FileText className='size-4' />
-                  {batchPdfBusy
-                    ? 'Preparing A4 sheet…'
-                    : visibleSelectedCards.length > 0
-                      ? `Print A4 sheet (${visibleSelectedCards.length})`
-                      : `Print all to A4 (${visibleActiveCards.length})`}
-                </Button>
-              </div>
-            )}
-
-            {activeTab === 'unissued' && filteredUnissued.length > 0 && (
-              <div className='flex flex-wrap items-center gap-2'>
-                {visibleSelectedUnissued.length > 0 && (
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    size='sm'
-                    className='text-xs text-muted-foreground'
-                    disabled={!!batchIssueProgress}
-                    onClick={() => setSelectedUnissued(new Set())}
-                  >
-                    Clear ({visibleSelectedUnissued.length})
-                  </Button>
-                )}
-                {visibleSelectedUnissued.length > 0 && (
+            {activeTab === 'active' &&
+              visibleActiveCards.length > 0 &&
+              visibleSelectedCards.length === 0 && (
+                <div className='flex items-center gap-2'>
                   <Button
                     type='button'
                     variant='outline'
                     size='sm'
-                    disabled={!!batchIssueProgress || issue.isPending}
-                    onClick={() => void handleBatchIssue(false)}
+                    disabled={batchPdfBusy}
+                    onClick={() => void handleBatchPdf()}
                   >
-                    <CreditCard className='size-4' />
+                    <FileText className='size-4' />
+                    {batchPdfBusy
+                      ? 'Preparing A4 sheet…'
+                      : `Print all to A4 (${visibleActiveCards.length})`}
+                  </Button>
+                </div>
+              )}
+
+            {activeTab === 'unissued' &&
+              filteredUnissued.length > 0 &&
+              visibleSelectedUnissued.length === 0 && (
+                <div className='flex flex-wrap items-center gap-2'>
+                  <Button
+                    type='button'
+                    size='sm'
+                    disabled={!!batchIssueProgress || issue.isPending}
+                    onClick={() => void handleBatchIssue(true)}
+                  >
+                    <FileText className='size-4' />
                     {batchIssueProgress
                       ? `Issuing ${batchIssueProgress.done}/${batchIssueProgress.total}…`
-                      : `Issue selected (${visibleSelectedUnissued.length})`}
-                  </Button>
-                )}
-                <Button
-                  type='button'
-                  size='sm'
-                  disabled={!!batchIssueProgress || issue.isPending}
-                  onClick={() => void handleBatchIssue(true)}
-                >
-                  <FileText className='size-4' />
-                  {batchIssueProgress
-                    ? `Issuing ${batchIssueProgress.done}/${batchIssueProgress.total}…`
-                    : visibleSelectedUnissued.length > 0
-                      ? `Issue & export A4 (${visibleSelectedUnissued.length})`
                       : `Issue all & export A4 (${filteredUnissued.length})`}
-                </Button>
-              </div>
-            )}
+                  </Button>
+                </div>
+              )}
           </div>
 
           {activeTab === 'active' && (
@@ -1576,6 +1595,111 @@ export function CardsPage() {
             </Card>
           )}
         </div>
+
+        {activeTab === 'active' && visibleSelectedCards.length > 0 && (
+          <div
+            role='region'
+            aria-label='Selected active card actions'
+            className='sticky bottom-4 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md'
+          >
+            <div className='flex items-center gap-2.5 text-sm'>
+              <Badge variant='secondary' className='tabular-nums'>
+                {visibleSelectedCards.length} selected
+              </Badge>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                className='h-7 px-2 text-xs text-muted-foreground'
+                onClick={() => setSelectedCards(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+            <div className='flex flex-wrap items-center gap-2'>
+              <Button
+                type='button'
+                size='sm'
+                disabled={batchPdfBusy}
+                onClick={() => void handleBatchPdf()}
+              >
+                <FileText className='size-4' />
+                {batchPdfBusy
+                  ? 'Preparing A4 sheet…'
+                  : `Print A4 sheet (${visibleSelectedCards.length})`}
+              </Button>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                onClick={handleCopySelectedList}
+              >
+                <Copy className='size-4' />
+                Copy list
+              </Button>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='text-destructive hover:bg-destructive/10 hover:text-destructive'
+                disabled={bulkRevokeBusy || revoke.isPending}
+                onClick={() => setBulkRevokeOpen(true)}
+              >
+                <ShieldX className='size-4' />
+                Revoke selected ({visibleSelectedCards.length})
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'unissued' && visibleSelectedUnissued.length > 0 && (
+          <div
+            role='region'
+            aria-label='Selected unissued member actions'
+            className='sticky bottom-4 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md'
+          >
+            <div className='flex items-center gap-2.5 text-sm'>
+              <Badge variant='secondary' className='tabular-nums'>
+                {visibleSelectedUnissued.length} selected
+              </Badge>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                className='h-7 px-2 text-xs text-muted-foreground'
+                disabled={!!batchIssueProgress}
+                onClick={() => setSelectedUnissued(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+            <div className='flex flex-wrap items-center gap-2'>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                disabled={!!batchIssueProgress || issue.isPending}
+                onClick={() => void handleBatchIssue(false)}
+              >
+                <CreditCard className='size-4' />
+                {batchIssueProgress
+                  ? `Issuing ${batchIssueProgress.done}/${batchIssueProgress.total}…`
+                  : `Issue selected (${visibleSelectedUnissued.length})`}
+              </Button>
+              <Button
+                type='button'
+                size='sm'
+                disabled={!!batchIssueProgress || issue.isPending}
+                onClick={() => void handleBatchIssue(true)}
+              >
+                <FileText className='size-4' />
+                {batchIssueProgress
+                  ? `Issuing ${batchIssueProgress.done}/${batchIssueProgress.total}…`
+                  : `Issue & export A4 (${visibleSelectedUnissued.length})`}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <CardPreviewModal
@@ -1613,6 +1737,21 @@ export function CardsPage() {
             issue.mutate(replaceTarget.personId)
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={bulkRevokeOpen}
+        onOpenChange={setBulkRevokeOpen}
+        destructive
+        isLoading={bulkRevokeBusy}
+        title={`Revoke ${visibleSelectedCards.length} selected ${
+          visibleSelectedCards.length === 1 ? 'card' : 'cards'
+        }?`}
+        desc='All selected cards will stop working at check-in immediately. You can issue replacement cards afterward if needed.'
+        confirmText={`Revoke ${visibleSelectedCards.length} ${
+          visibleSelectedCards.length === 1 ? 'card' : 'cards'
+        }`}
+        handleConfirm={() => void handleBulkRevoke()}
       />
 
       <ConfirmDialog

@@ -2556,4 +2556,136 @@ describe('CMAMS browser workflows', () => {
     await expect.poll(() => issuedIds.length).toBe(2)
     expect(issuedIds).toEqual(['u1', 'u2'])
   })
+
+  it('shows sticky bulk actions when active cards are marked and revokes selected cards after confirmation', async () => {
+    const revokedIds: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/v1/cards') && !url.endsWith('/revoke')) {
+          return jsonResponse({
+            cards: [
+              {
+                id: 'c1',
+                short_code: 'AAA-111',
+                person_id: 'p1',
+                member_code: 'CM-1001',
+                first_name: 'Ada',
+                last_name: 'Okafor',
+                lifecycle_stage: 'MEMBER',
+                scan_count: 2,
+              },
+            ],
+            unissued: [],
+          })
+        }
+        if (url.endsWith('/revoke') && init?.method === 'POST') {
+          const match = /\/cards\/([^/]+)\/revoke$/.exec(url)
+          if (match) revokedIds.push(match[1])
+          return jsonResponse({ ok: true })
+        }
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<CardsPage />)
+    await expect.element(screen.getByText('Ada Okafor')).toBeVisible()
+    await userEvent.click(screen.getByLabelText('Select Ada Okafor'))
+
+    const bar = screen.getByRole('region', {
+      name: 'Selected active card actions',
+    })
+    await expect.element(bar).toBeVisible()
+    await expect
+      .element(bar.getByRole('button', { name: /Print A4 sheet \(1\)/i }))
+      .toBeVisible()
+    await expect
+      .element(bar.getByRole('button', { name: /Copy list/i }))
+      .toBeVisible()
+    await userEvent.click(
+      bar.getByRole('button', { name: /Revoke selected \(1\)/i })
+    )
+    await userEvent.click(
+      page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: 'Revoke 1 card' })
+    )
+    await expect.poll(() => revokedIds.length).toBe(1)
+    expect(revokedIds).toEqual(['c1'])
+  })
+
+  it('allows registering a new profile directly as an existing church member on Desk', async () => {
+    const payloads: { lifecycleStage?: string }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/v1/catalogs')
+          return jsonResponse({
+            compounds: [],
+            departments: [],
+            regions: [{ code: 'NDAR', label: 'Ndar' }],
+          })
+        if (url === '/api/v1/cells') return jsonResponse({ cells: [] })
+        if (url === '/api/v1/services') return jsonResponse({ services: [] })
+        if (url === '/api/v1/people' && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as {
+            lifecycleStage?: string
+          }
+          payloads.push(body)
+          return jsonResponse(
+            {
+              person: {
+                id: 'member-new-1',
+                member_code: 'CM-2200',
+                first_name: 'Chidi',
+                last_name: 'Nwosu',
+                lifecycle_stage: body.lifecycleStage ?? 'FIRST_TIMER',
+              },
+            },
+            201
+          )
+        }
+        if (url.endsWith('/cards') && init?.method === 'POST')
+          return jsonResponse(
+            {
+              card: {
+                memberCode: 'CM-2200',
+                shortCode: 'MEM-220',
+                credential: 'cma://v1/abcdefghijklmnopqrstuv',
+              },
+            },
+            201
+          )
+        return jsonResponse({}, 404)
+      })
+    )
+
+    const screen = await renderWithShell(<DeskPage />)
+    await userEvent.click(
+      screen.getByRole('button', { name: /Church member/i })
+    )
+    await userEvent.type(screen.getByLabelText('First name'), 'Chidi')
+    await userEvent.type(screen.getByLabelText('Last name'), 'Nwosu')
+    await userEvent.type(screen.getByLabelText('Email'), 'chidi@example.org')
+    await userEvent.click(screen.getByLabelText('Region'))
+    await userEvent.click(page.getByRole('option', { name: 'Ndar' }))
+    await userEvent.type(screen.getByLabelText('Compound'), 'Gungdul')
+    await userEvent.click(screen.getByLabelText('Birth month'))
+    await userEvent.click(page.getByRole('option', { name: 'May' }))
+    await userEvent.type(screen.getByLabelText('Birth day'), '14')
+    await userEvent.click(
+      screen.getByLabelText('Person agrees to this privacy notice')
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Register person' })
+    )
+
+    await expect.poll(() => payloads.length).toBe(1)
+    expect(payloads[0].lifecycleStage).toBe('MEMBER')
+    await expect
+      .element(screen.getByText('Member', { exact: true }))
+      .toBeVisible()
+  })
 })

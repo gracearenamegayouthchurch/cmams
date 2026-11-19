@@ -40,6 +40,7 @@ const registration = z.object({
     ])
     .optional(),
   householdId: z.uuid().optional(),
+  lifecycleStage: z.enum(['FIRST_TIMER', 'MEMBER']).optional().default('FIRST_TIMER'),
   consent: z.literal(true),
   confirmDistinct: z.boolean().optional(),
 }).refine((data) => data.region !== 'HOSTEL' || isValidHostelName(data.compoundName), {
@@ -184,8 +185,8 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
     }
     const created = await client.query(
       `INSERT INTO people(first_name,middle_name,last_name,phone_e164,household_id,privacy_consent_at,registered_by_staff_id,
-        email,compound_id,room,birth_month,birth_day,birth_year)
-       VALUES($1,$2,$3,$4,$5,now(),$6,$7,$8,$9,$10,$11,$12)
+        email,compound_id,room,birth_month,birth_day,birth_year,lifecycle_stage)
+       VALUES($1,$2,$3,$4,$5,now(),$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING id,member_code,first_name,last_name,lifecycle_stage`,
       [
         data.firstName,
@@ -200,6 +201,7 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
         data.birthMonth,
         data.birthDay,
         data.birthYear ?? null,
+        data.lifecycleStage,
       ]
     )
     const person = created.rows[0]
@@ -219,10 +221,19 @@ export async function registerPerson(db: Db, input: unknown, staffId: string) {
     }
     await client.query(
       `INSERT INTO person_stage_history(person_id,new_stage,changed_by_staff_id,reason)
-      VALUES($1,'FIRST_TIMER',$2,'Registered at front desk')`,
-      [person.id, staffId]
+      VALUES($1,$2,$3,$4)`,
+      [
+        person.id,
+        data.lifecycleStage,
+        staffId,
+        data.lifecycleStage === 'MEMBER'
+          ? 'Registered as existing church member'
+          : 'Registered at front desk',
+      ]
     )
-    await queueWelcome(client, person.id, data.phone, data.firstName)
+    if (data.lifecycleStage === 'FIRST_TIMER') {
+      await queueWelcome(client, person.id, data.phone, data.firstName)
+    }
     await client.query('COMMIT')
     return person
   } catch (error) {
